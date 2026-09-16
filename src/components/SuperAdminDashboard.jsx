@@ -31,6 +31,7 @@ import {
   Share2
 } from 'lucide-react';
 import { safeFetch, LocalSaaSStorage } from '../api/client';
+import { subscribeToLiveCompanies } from '../firebase';
 
 export default function SuperAdminDashboard({ onImpersonateTenant }) {
   const [activeTab, setActiveTab] = useState('tenants'); // 'tenants', 'logins', 'central_catalog', 'products', 'inventory'
@@ -134,9 +135,45 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
       fetchCentralProducts(true);
     });
 
+    // ⚡ مراقبة حية وفورية عبر Firebase Firestore (onSnapshot)
+    let unsubscribeFirebase = () => {};
+    try {
+      unsubscribeFirebase = subscribeToLiveCompanies((fbCompanies) => {
+        if (fbCompanies && fbCompanies.length > 0) {
+          setTenants(prev => {
+            const merged = [...prev];
+            let hasNew = false;
+            let newest = null;
+            fbCompanies.forEach(fbComp => {
+              const idx = merged.findIndex(t => 
+                (t.id && t.id === fbComp.id) || 
+                (t.email && fbComp.email && t.email === fbComp.email) ||
+                (t.name_ar && fbComp.name_ar && t.name_ar === fbComp.name_ar)
+              );
+              if (idx === -1) {
+                merged.unshift(fbComp);
+                hasNew = true;
+                newest = fbComp;
+              } else {
+                merged[idx] = { ...merged[idx], ...fbComp };
+              }
+            });
+            if (hasNew && newest) {
+              setNewTenantAlert(`🔥 شركة جديدة ظهرت حياً عبر Firebase: ${newest.name_ar} (المالك: ${newest.owner_name})`);
+              setTimeout(() => setNewTenantAlert(null), 8000);
+            }
+            return merged;
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('Firebase live listener init note:', e);
+    }
+
     return () => {
       clearInterval(interval);
       window.removeEventListener('suwayan_tenant_registered', handleTenantRegistered);
+      if (typeof unsubscribeFirebase === 'function') unsubscribeFirebase();
     };
   }, []);
 

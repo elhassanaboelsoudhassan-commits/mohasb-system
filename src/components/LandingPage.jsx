@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { translations } from '../i18n';
 import { safeFetch } from '../api/client';
+import { saveCompanyToFirebase } from '../firebase';
 
 export default function LandingPage({ onLoginSuccess, lang, setLang }) {
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -76,6 +77,25 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
     setRegLoading(true);
     setRegError('');
     try {
+      // 1. حفظ فوري في قاعدة بيانات فايربيز Firestore (مجموعة users ومجموعة tenants)
+      try {
+        await saveCompanyToFirebase({
+          company_name_ar: regForm.company_name_ar,
+          name_ar: regForm.company_name_ar,
+          company_name_en: regForm.company_name_en,
+          owner_name: regForm.owner_name,
+          email: regForm.email,
+          phone: regForm.phone,
+          cr_number: regForm.cr_number,
+          vat_number: regForm.vat_number,
+          city: regForm.city,
+          role: 'company_admin',
+          status: 'active'
+        });
+      } catch (fbErr) {
+        console.warn('Firebase Firestore saveCompany note:', fbErr);
+      }
+
       const data = await safeFetch('/api/auth/register-tenant', {
         method: 'POST',
         body: JSON.stringify(regForm)

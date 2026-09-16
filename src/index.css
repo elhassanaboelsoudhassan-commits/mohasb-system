@@ -61,6 +61,7 @@ body {
   display: flex;
   min-height: 100vh;
   width: 100vw;
+  position: relative;
 }
 
 .sidebar {
@@ -71,8 +72,24 @@ body {
   flex-direction: column;
   flex-shrink: 0;
   border-left: 1px solid #1e293b;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 40;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 50;
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 45;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.sidebar-backdrop.active {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .main-content {
@@ -82,27 +99,102 @@ body {
   min-width: 0;
   height: 100vh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .top-bar {
-  height: 70px;
+  min-height: 64px;
   background: #ffffff;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 2rem;
+  padding: 0 1.5rem;
   position: sticky;
   top: 0;
   z-index: 30;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .content-body {
-  padding: 2rem;
+  padding: 1.5rem;
   max-width: 1600px;
   margin: 0 auto;
   width: 100%;
+}
+
+/* ===================== Mobile & Tablet Responsiveness ===================== */
+@media (max-width: 1023px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 290px;
+    max-width: 85vw;
+    height: 100vh;
+    transform: translateX(100%);
+    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+    z-index: 50;
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  .top-bar {
+    padding: 0.5rem 1rem;
+    min-height: 60px;
+  }
+
+  .content-body {
+    padding: 1rem 0.75rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .top-bar {
+    padding: 0.5rem 0.6rem;
+    min-height: 56px;
+  }
+
+  .content-body {
+    padding: 0.75rem 0.4rem;
+  }
+
+  .card {
+    padding: 0.85rem !important;
+    border-radius: 12px !important;
+  }
+
+  .form-input, .form-select {
+    font-size: 15px !important;
+    padding: 0.55rem 0.7rem !important;
+  }
+
+  .btn {
+    padding: 0.45rem 0.8rem !important;
+    font-size: 0.825rem !important;
+  }
+
+  .data-table th, .data-table td {
+    padding: 0.5rem 0.55rem !important;
+    font-size: 0.75rem !important;
+  }
+
+  .modal-overlay {
+    padding: 0.5rem !important;
+  }
+
+  .modal-content {
+    width: 96vw !important;
+    max-width: 100% !important;
+    padding: 1rem !important;
+    border-radius: 14px !important;
+    max-height: 94vh !important;
+  }
 }
 
 /* Cards & Containers */
