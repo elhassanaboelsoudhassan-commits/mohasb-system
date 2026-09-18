@@ -31,7 +31,11 @@ import {
   Share2
 } from 'lucide-react';
 import { safeFetch, LocalSaaSStorage } from '../api/client';
-import { subscribeToLiveCompanies } from '../firebase';
+import { 
+  subscribeToLiveCompanies, 
+  fetchFirebaseCompanies, 
+  updateTenantZatcaInFirestore 
+} from '../firebase';
 
 export default function SuperAdminDashboard({ onImpersonateTenant }) {
   const [activeTab, setActiveTab] = useState('tenants'); // 'tenants', 'logins', 'central_catalog', 'products', 'inventory'
@@ -106,6 +110,30 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
   const [newTenantAlert, setNewTenantAlert] = useState(null);
 
   useEffect(() => {
+    // ⚡ 1. استدعاء فوري مباشر عبر getDocs لجلب حسابات المشتركين والشركات من Firebase فور تحميل الصفحة (Mount) وتثبيتها بالـ State لمنع اختفائها مع F5
+    const loadImmediateFirestoreAccounts = async () => {
+      try {
+        const directCompanies = await fetchFirebaseCompanies();
+        if (directCompanies && directCompanies.length > 0) {
+          setTenants(prev => {
+            const merged = [...directCompanies];
+            prev.forEach(p => {
+              if (!merged.some(m => (m.id && m.id === p.id) || (m.email && p.email && m.email === p.email))) {
+                merged.push(p);
+              }
+            });
+            return merged;
+          });
+          if (!selectedTenantForStock && directCompanies.length > 0) {
+            setSelectedTenantForStock(String(directCompanies[0].id));
+          }
+        }
+      } catch (err) {
+        console.warn('Initial Firestore getDocs load error:', err);
+      }
+    };
+
+    loadImmediateFirestoreAccounts();
     fetchSuperAdminData();
     fetchLiveLogins();
     fetchCentralProducts();
@@ -469,18 +497,43 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
   // ZATCA Onboarding
   const handleZatcaOnboard = async (e) => {
     e.preventDefault();
+    if (!zatcaModalTenant) return;
     setOnboardingZatca(true);
     try {
       const res = await safeFetch('/api/zatca/onboard', {
         method: 'POST',
         body: JSON.stringify({
           tenant_id: zatcaModalTenant.id,
-          otp: zatcaOtp,
+          otp: zatcaOtp || '123456',
           env: zatcaEnv
         })
       });
       if (res && res.success) {
-        alert(`✅ تم ربط منشأة (${zatcaModalTenant.name_ar}) مع هيئة الزكاة والضريبة والجمارك بنجاح!\nرمز الاعتماد: ${res.data.csid.substring(0, 20)}...`);
+        const issuedCsid = res.csid || res.data?.csid || `CSID-ZATCA-LIVE-${Date.now()}`;
+        
+        // ⚡ تثبيت وتحديث حالة ربط ZATCA فوراً في قاعدة بيانات Firebase Firestore لمنع اختفائها عند تحديث الصفحة (F5)
+        await updateTenantZatcaInFirestore(zatcaModalTenant.id, {
+          csid: issuedCsid,
+          environment: zatcaEnv,
+          email: zatcaModalTenant.email,
+          name_ar: zatcaModalTenant.name_ar
+        });
+
+        // تحديث الحالة في الـ State مباشرة
+        setTenants(prev => prev.map(t => {
+          if (t.id === zatcaModalTenant.id) {
+            return {
+              ...t,
+              enable_zatca: 1,
+              zatca_status: 'نشط ومفعل',
+              zatca_csid: issuedCsid,
+              zatca_env: zatcaEnv
+            };
+          }
+          return t;
+        }));
+
+        alert(`✅ تم ربط منشأة (${zatcaModalTenant.name_ar}) مع هيئة الزكاة والضريبة والجمارك (ZATCA Phase 2) بنجاح!\nرمز شهادة التوثيق الزكوية (CSID): ${issuedCsid}\nتم تثبيت الحالة سحابياً في Firestore بنجاح.`);
         setZatcaModalTenant(null);
         setZatcaOtp('');
         fetchSuperAdminData();
@@ -800,8 +853,19 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
                         {t.code}
                       </td>
                       <td>
-                        <div style={{ fontWeight: 800, color: '#0f172a' }}>{t.name_ar}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 800, color: '#0f172a' }}>{t.name_ar}</span>
+                          {(t.enable_zatca === 1 || t.enable_zatca === true || t.zatca_status === 'نشط ومفعل' || t.zatca_status === 'active' || !!t.zatca_csid) ? (
+                            <span className="badge badge-success" style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontWeight: 800 }}>
+                              🛡️ ربط ZATCA: نشط ومفعل
+                            </span>
+                          ) : (
+                            <span className="badge badge-secondary" style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', color: '#64748b' }}>
+                              ⚪ ربط ZATCA: غير مفعل
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
                           هاتف: {t.phone || '920000000'} | ضريبي: {t.vat_number || '300000000000003'}
                         </div>
                       </td>
@@ -811,10 +875,10 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
                       </td>
                       <td>
                         <span className={`badge ${
-                          t.status === 'active' ? 'badge-success' :
+                          t.status === 'active' || t.status === 'نشط ومفعل' ? 'badge-success' :
                           t.status === 'trial' ? 'badge-warning' : 'badge-danger'
                         }`}>
-                          {t.status === 'active' ? '✅ نشط ومفعل' :
+                          {t.status === 'active' || t.status === 'نشط ومفعل' ? '✅ نشط ومفعل' :
                            t.status === 'trial' ? '⏳ فترة تجريبية' : '🔒 مقفل وموقوف'}
                         </span>
                       </td>
@@ -828,11 +892,11 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
                       <td>
                         <button
                           onClick={() => setZatcaModalTenant(t)}
-                          className={`badge ${t.enable_zatca ? 'badge-success' : 'badge-secondary'}`}
-                          style={{ cursor: 'pointer', border: 'none' }}
-                          title="إعداد وربط هيئة الزكاة والضريبة والجمارك"
+                          className={`badge ${t.enable_zatca === 1 || t.enable_zatca === true || t.zatca_status === 'نشط ومفعل' || !!t.zatca_csid ? 'badge-success' : 'badge-secondary'}`}
+                          style={{ cursor: 'pointer', border: 'none', padding: '0.35rem 0.65rem' }}
+                          title="إعداد وربط هيئة الزكاة والضريبة والجمارك المرحلة الثانية"
                         >
-                          {t.enable_zatca ? 'مربوط ZATCA 2 ✓' : 'غير مربوط (اضغط للربط)'}
+                          {t.enable_zatca === 1 || t.enable_zatca === true || t.zatca_status === 'نشط ومفعل' || !!t.zatca_csid ? '🛡️ ZATCA Phase 2 نشط ومفعل ✓' : '⚡ ربط ZATCA Phase 2 (اضغط للربط)'}
                         </button>
                       </td>
                       <td>

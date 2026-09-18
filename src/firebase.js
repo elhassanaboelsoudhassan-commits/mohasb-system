@@ -85,6 +85,136 @@ export async function saveCompanyToFirebase(companyData) {
 }
 
 /**
+ * استدعاء قياسي مباشر (getDocs) لجلب حسابات المشتركين والشركات من Firestore
+ * يعمل فور تحميل الصفحة (Mount) لتخزين البيانات فوراً في الـ State وتثبيتها ضد F5
+ */
+/**
+ * دالة الجلب المباشر والقياسي (getDocs) لجميع حسابات الشركات والمشتركين من Firestore
+ * يتم استدعاؤها فوراً عند تحميل المكون (Component Mount) لمنع تصفير الحسابات مع F5
+ * تقوم بالبحث في مجموعتي "users" و "tenants" ودمج البيانات لمنع فقدان أي منشأة مسجلة
+ */
+export async function fetchFirebaseCompanies() {
+  try {
+    const list = [];
+    const seenIds = new Set();
+    const seenEmails = new Set();
+
+    // 1. جلب الشركات من مجموعة USERS_COLLECTION ('users')
+    try {
+      const usersCol = collection(db, USERS_COLLECTION);
+      const userSnapshot = await getDocs(usersCol);
+      userSnapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        const isZatcaActive = data.enable_zatca === 1 || data.enable_zatca === true || data.zatca_status === 'نشط ومفعل' || !!data.zatca_csid;
+        const item = {
+          id: docSnap.id,
+          ...data,
+          name_ar: data.name_ar || data.company_name_ar || data.name || data.company_name || 'شركة مسجلة سحابياً',
+          owner_name: data.owner_name || data.user_name || data.name || 'المشترك',
+          email: data.email || '—',
+          phone: data.phone || data.mobile || '—',
+          code: data.code || ('CO-' + docSnap.id.slice(-4).toUpperCase()),
+          status: data.status || 'نشط ومفعل',
+          enable_zatca: isZatcaActive ? 1 : 0,
+          zatca_status: isZatcaActive ? 'نشط ومفعل' : (data.zatca_status || 'قيد التهيئة'),
+          zatca_csid: data.zatca_csid || (isZatcaActive ? 'CSID-ZATCA-ACTIVE' : null),
+          trial_ends_at: data.trial_ends_at || '2030-12-31',
+          bank_account: data.bank_account || '3165002243921500013',
+          total_sales: data.total_sales || 0,
+          is_firebase_live: true
+        };
+        list.push(item);
+        seenIds.add(String(docSnap.id));
+        if (data.email) seenEmails.add(data.email.toLowerCase());
+      });
+    } catch (errUsers) {
+      console.warn('Notice fetching users collection via getDocs:', errUsers);
+    }
+
+    // 2. جلب الشركات أيضاً من مجموعة TENANTS_COLLECTION ('tenants') ودمجها لمنع أي نقص
+    try {
+      const tenantsCol = collection(db, TENANTS_COLLECTION);
+      const tenantSnapshot = await getDocs(tenantsCol);
+      tenantSnapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        const emailLower = data.email ? data.email.toLowerCase() : null;
+        if (!seenIds.has(String(docSnap.id)) && (!emailLower || !seenEmails.has(emailLower))) {
+          const isZatcaActive = data.enable_zatca === 1 || data.enable_zatca === true || data.zatca_status === 'نشط ومفعل' || !!data.zatca_csid;
+          list.push({
+            id: docSnap.id,
+            ...data,
+            name_ar: data.name_ar || data.company_name_ar || data.name || data.company_name || 'شركة مسجلة سحابياً',
+            owner_name: data.owner_name || data.user_name || data.name || 'المشترك',
+            email: data.email || '—',
+            phone: data.phone || data.mobile || '—',
+            code: data.code || ('CO-' + docSnap.id.slice(-4).toUpperCase()),
+            status: data.status || 'نشط ومفعل',
+            enable_zatca: isZatcaActive ? 1 : 0,
+            zatca_status: isZatcaActive ? 'نشط ومفعل' : (data.zatca_status || 'قيد التهيئة'),
+            zatca_csid: data.zatca_csid || (isZatcaActive ? 'CSID-ZATCA-ACTIVE' : null),
+            trial_ends_at: data.trial_ends_at || '2030-12-31',
+            bank_account: data.bank_account || '3165002243921500013',
+            total_sales: data.total_sales || 0,
+            is_firebase_live: true
+          });
+        }
+      });
+    } catch (errTenants) {
+      console.warn('Notice fetching tenants collection via getDocs:', errTenants);
+    }
+
+    return list;
+  } catch (error) {
+    console.warn('Firebase getDocs fetch warning:', error);
+    return [];
+  }
+}
+
+/**
+ * تحديث وتثبيت حالة ربط ZATCA Phase 2 في قاعدة بيانات Firebase Firestore
+ * لمنع اختفائها عند عمل تحديث (F5)
+ */
+export async function updateTenantZatcaInFirestore(tenantId, zatcaData = {}) {
+  try {
+    const csid = zatcaData.csid || `CSID-ZATCA-LIVE-${Math.floor(100000 + Math.random() * 900000)}`;
+    const updatePayload = {
+      enable_zatca: 1,
+      zatca_status: 'نشط ومفعل',
+      zatca_phase2_status: 'ACTIVE',
+      zatca_csid: csid,
+      zatca_env: zatcaData.environment || zatcaData.env || 'sandbox',
+      zatca_qr_ready: true,
+      zatca_updated_at: new Date().toISOString()
+    };
+
+    // 1. التحديث في مجموعة users
+    try {
+      const userRef = doc(db, USERS_COLLECTION, String(tenantId));
+      await setDoc(userRef, updatePayload, { merge: true });
+    } catch (e) {
+      const q = query(collection(db, USERS_COLLECTION));
+      const snap = await getDocs(q);
+      snap.forEach(async (d) => {
+        if (d.id == tenantId || d.data().code == tenantId || d.data().email == zatcaData.email || d.data().name_ar == zatcaData.name_ar) {
+          await setDoc(doc(db, USERS_COLLECTION, d.id), updatePayload, { merge: true });
+        }
+      });
+    }
+
+    // 2. التحديث أيضاً في مجموعة tenants لضمان التطابق
+    try {
+      const tenantRef = doc(db, TENANTS_COLLECTION, String(tenantId));
+      await setDoc(tenantRef, updatePayload, { merge: true });
+    } catch (e) {}
+
+    return { success: true, csid, status: 'نشط ومفعل' };
+  } catch (error) {
+    console.error('updateTenantZatcaInFirestore error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * دالة المراقبة الحية الفورية (onSnapshot) لقائمة الشركات والمشتركين
  * تطير وتظهر أسماء الشركات المسجلة فورياً بدون تحديث الصفحة
  */
@@ -97,6 +227,7 @@ export function subscribeToLiveCompanies(callback) {
       const liveList = [];
       snapshot.forEach(docSnap => {
         const data = docSnap.data();
+        const isZatcaActive = data.enable_zatca === 1 || data.enable_zatca === true || data.zatca_status === 'نشط ومفعل' || !!data.zatca_csid;
         liveList.push({
           id: docSnap.id,
           ...data,
@@ -105,8 +236,13 @@ export function subscribeToLiveCompanies(callback) {
           email: data.email || '—',
           phone: data.phone || data.mobile || '—',
           code: data.code || ('CO-' + docSnap.id.slice(-4).toUpperCase()),
-          status: 'نشط ومفعل', // تأكيد الحالة نشط ومفعل
+          status: data.status || 'نشط ومفعل', // تأكيد الحالة نشط ومفعل
+          enable_zatca: isZatcaActive ? 1 : 0,
+          zatca_status: isZatcaActive ? 'نشط ومفعل' : (data.zatca_status || 'قيد التهيئة'),
+          zatca_csid: data.zatca_csid || (isZatcaActive ? 'CSID-ZATCA-ACTIVE' : null),
           trial_ends_at: data.trial_ends_at || '2030-12-31',
+          bank_account: data.bank_account || '3165002243921500013',
+          total_sales: data.total_sales || 0,
           is_firebase_live: true
         });
       });

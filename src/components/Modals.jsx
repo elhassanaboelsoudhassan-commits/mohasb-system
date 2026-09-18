@@ -12,6 +12,7 @@ import {
   Warehouse,
   CheckCircle2
 } from 'lucide-react';
+import { safeFetch } from '../api/client';
 
 // ========================================================
 // 1. نافذة إصدار فاتورة مبيعات جديدة (ZATCA Phase 2)
@@ -84,9 +85,8 @@ export function NewInvoiceModal({ branches, products, contacts, onClose, onSucce
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/invoices', {
+      const data = await safeFetch('/api/invoices', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invoice_type: invoiceType,
           branch_id: Number(branchId),
@@ -97,12 +97,11 @@ export function NewInvoiceModal({ branches, products, contacts, onClose, onSucce
           notes
         })
       });
-      const data = await res.json();
-      if (data.success) {
+      if (data && data.success) {
         onSuccess(data);
         onClose();
       } else {
-        alert('حدث خطأ أثناء إصدار الفاتورة: ' + data.error);
+        alert('حدث خطأ أثناء إصدار الفاتورة: ' + (data?.error || 'خطأ غير متوقع'));
       }
     } catch (err) {
       alert('خطأ في الاتصال: ' + err.message);

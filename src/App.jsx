@@ -537,6 +537,7 @@ export default function App() {
               invoices={invoices}
               branches={branches}
               selectedBranch={selectedBranch}
+              currentTenant={currentTenant}
               onRefreshInvoices={() => { fetchInvoices(); fetchJournalEntries(); fetchSummary(); }}
               onOpenNewInvoice={() => setShowInvoiceModal(true)}
             />

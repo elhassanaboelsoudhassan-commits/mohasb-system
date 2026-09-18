@@ -57,8 +57,9 @@ export default function DashboardView({ summary, branches, onViewJournalDetails,
           <button 
             onClick={() => onSwitchTab('zatca')} 
             className="btn btn-primary"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#059669' }}
           >
-            إصدار فاتورة ZATCA
+            <span>🛡️ ربط واعتماد ZATCA 2</span>
           </button>
         </div>
       </div>
