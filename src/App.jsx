@@ -33,8 +33,19 @@ import AiAssistantWidget from './components/AiAssistantWidget';
 import { CheckCircle2, X } from 'lucide-react';
 import { t } from './i18n';
 import { safeFetch } from './api/client';
+import { initializeAllFirestoreCollections } from './firebase';
 
 export default function App() {
+  // Mobile drawer state
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Initialize all Firestore collections on startup
+  useEffect(() => {
+    initializeAllFirestoreCollections().catch(err => {
+      console.warn('Firestore collections init notice:', err);
+    });
+  }, []);
+
   // Auth & Tenant States
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -278,6 +289,12 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* Mobile Drawer Backdrop */}
+      <div 
+        className={`sidebar-backdrop ${mobileMenuOpen ? 'active' : ''}`} 
+        onClick={() => setMobileMenuOpen(false)} 
+      />
+
       {/* Sidebar Navigation */}
       <Sidebar 
         activeTab={activeTab} 
@@ -289,6 +306,8 @@ export default function App() {
         onStopImpersonating={handleStopImpersonating}
         onLogout={handleLogout}
         lang={lang}
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
       {/* Main Container */}
@@ -312,6 +331,7 @@ export default function App() {
           onToggleLang={toggleLanguage}
           theme={theme}
           onToggleTheme={toggleTheme}
+          onToggleMobileMenu={() => setMobileMenuOpen(prev => !prev)}
         />
 
         {/* Dynamic Content Body */}

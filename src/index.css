@@ -125,8 +125,29 @@ body {
   width: 100%;
 }
 
+/* Mobile menu & close buttons */
+.mobile-menu-btn {
+  display: none !important;
+}
+
+.mobile-close-btn {
+  display: none !important;
+}
+
 /* ===================== Mobile & Tablet Responsiveness ===================== */
 @media (max-width: 1023px) {
+  .mobile-menu-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobile-close-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
   .sidebar {
     position: fixed;
     top: 0;

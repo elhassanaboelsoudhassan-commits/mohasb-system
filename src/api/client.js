@@ -2,6 +2,12 @@
  * منظومة الصويان السحابية - طبقة الاتصال الآمن والمحرك المحلي (Safe API Client & Local SaaS Engine)
  * يضمن العمل بنسبة 100% على Vercel أو أي خادم دون مواجهة أخطاء JSON (Unexpected token 'T')
  */
+import { 
+  saveCompanyToFirebase, 
+  saveProductToFirebase, 
+  saveSaleToFirebase, 
+  saveBranchToFirebase 
+} from '../firebase';
 
 // بيانات المشاتل الافتراضية الأولية
 const SEED_TENANTS = [
@@ -891,8 +897,9 @@ function handleLocalFallback(url, options, tenantId) {
       name_en: compNameEn,
       company_name_en: compNameEn,
       code: `AGRI-${String(newId).slice(-4)}`,
-      status: 'trial',
-      trial_ends_at: '2026-10-31',
+      status: 'نشط ومفعل',
+      active_status: 'نشط ومفعل',
+      trial_ends_at: '2030-12-31',
       owner_name: body.owner_name,
       email: body.email,
       phone: body.phone,
@@ -906,6 +913,11 @@ function handleLocalFallback(url, options, tenantId) {
     };
     tenants.unshift(newTenant);
     LocalSaaSStorage.set('tenants', tenants);
+
+    // المزامنة الفورية مع Firebase Firestore
+    try {
+      saveCompanyToFirebase(newTenant).catch(e => console.warn('Firebase saveCompany error:', e));
+    } catch (e) {}
 
     const newUser = {
       id: Date.now() + 1,
@@ -926,7 +938,7 @@ function handleLocalFallback(url, options, tenantId) {
 
     return {
       success: true,
-      message: 'تم تسجيل المنشأة بنجاح وبدء الفترة التجريبية',
+      message: 'تم تسجيل المنشأة وتفعيلها بنجاح وحفظها في Firestore',
       tenant: newTenant,
       user: newUser
     };
@@ -1124,6 +1136,11 @@ function handleLocalFallback(url, options, tenantId) {
     const existingInvoices = LocalSaaSStorage.getInvoices(tenantId);
     existingInvoices.unshift(newInvoice);
     LocalSaaSStorage.set('invoices', existingInvoices);
+
+    // الحفظ والمزامنة الحية مع جدول المبيعات (sales) في Firebase Firestore
+    try {
+      saveSaleToFirebase(newInvoice).catch(e => console.warn('Firebase saveSale error:', e));
+    } catch (e) {}
 
     return {
       success: true,

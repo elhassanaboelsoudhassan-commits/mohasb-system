@@ -90,7 +90,7 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
           vat_number: regForm.vat_number,
           city: regForm.city,
           role: 'company_admin',
-          status: 'active'
+          status: 'نشط ومفعل'
         });
       } catch (fbErr) {
         console.warn('Firebase Firestore saveCompany note:', fbErr);

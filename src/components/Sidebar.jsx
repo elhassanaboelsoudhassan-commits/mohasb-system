@@ -19,7 +19,8 @@ import {
   Target,
   LifeBuoy,
   Truck,
-  CreditCard
+  CreditCard,
+  X
 } from 'lucide-react';
 import { t } from '../i18n';
 
@@ -32,7 +33,9 @@ export default function Sidebar({
   isImpersonating,
   onStopImpersonating,
   onLogout,
-  lang = 'ar'
+  lang = 'ar',
+  mobileOpen = false,
+  onCloseMobile
 }) {
   const isCashier = currentUser?.role === 'cashier';
 
@@ -73,32 +76,52 @@ export default function Sidebar({
     : menuItems;
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
       {/* Brand Header */}
       <div style={{ padding: '1.25rem 1.1rem', borderBottom: '1px solid #1e293b' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
-            color: '#ffffff',
-            flexShrink: 0
-          }}>
-            <Sparkles size={22} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
+              color: '#ffffff',
+              flexShrink: 0
+            }}>
+              <Sparkles size={22} />
+            </div>
+            <div style={{ overflow: 'hidden' }}>
+              <h1 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.3px', lineHeight: 1.2, whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                منظومة الصويان السحابية
+              </h1>
+              <p style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: 700, margin: '2px 0 0' }}>
+                {currentTenant ? currentTenant.company_name_ar : 'منصة المشاتل والزراعة'}
+              </p>
+            </div>
           </div>
-          <div style={{ overflow: 'hidden' }}>
-            <h1 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.3px', lineHeight: 1.2, whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-              منظومة الصويان السحابية
-            </h1>
-            <p style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: 700, margin: '2px 0 0' }}>
-              {currentTenant ? currentTenant.company_name_ar : 'منصة المشاتل والزراعة'}
-            </p>
-          </div>
+
+          {onCloseMobile && (
+            <button
+              onClick={onCloseMobile}
+              className="mobile-close-btn"
+              style={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#ffffff',
+                padding: '6px',
+                cursor: 'pointer'
+              }}
+              title="إغلاق القائمة"
+            >
+              <X size={20} />
+            </button>
+          )}
         </div>
 
         {isImpersonating && (
@@ -146,7 +169,10 @@ export default function Sidebar({
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => {
+                setActiveTab(item.id);
+                if (onCloseMobile) onCloseMobile();
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',

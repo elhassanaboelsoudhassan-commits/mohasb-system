@@ -12,7 +12,8 @@ import {
   Moon,
   Bell,
   AlertTriangle,
-  X
+  X,
+  Menu
 } from 'lucide-react';
 import { t } from '../i18n';
 
@@ -33,7 +34,8 @@ export default function Header({
   lang,
   onToggleLang,
   theme = 'light',
-  onToggleTheme
+  onToggleTheme,
+  onToggleMobileMenu
 }) {
   const isCashier = currentUser?.role === 'cashier';
   const [showLowStockMenu, setShowLowStockMenu] = useState(false);
@@ -47,7 +49,25 @@ export default function Header({
 
   return (
     <header className="top-bar">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        {/* Mobile / Tablet Hamburger Menu Toggle */}
+        {onToggleMobileMenu && (
+          <button
+            onClick={onToggleMobileMenu}
+            className="mobile-menu-btn"
+            style={{
+              padding: '0.45rem 0.65rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              background: 'var(--card-bg)',
+              color: 'var(--text-main)',
+              cursor: 'pointer'
+            }}
+            title="القائمة الجانبية"
+          >
+            <Menu size={20} />
+          </button>
+        )}
         {/* Branch Selector */}
         {!isCashier && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--card-bg)', padding: '0.4rem 0.8rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
