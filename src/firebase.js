@@ -9,7 +9,10 @@ import {
   onSnapshot, 
   query, 
   orderBy, 
-  serverTimestamp 
+  serverTimestamp,
+  deleteDoc,
+  updateDoc,
+  limit
 } from 'firebase/firestore';
 
 export const firebaseConfig = {
@@ -28,12 +31,14 @@ export const db = getFirestore(app);
 
 // أسماء المجموعات (Collections) المطلوبة سحابياً
 export const COLLECTIONS = {
-  USERS: 'users',         // جدول الشركات والمشتركين
-  PRODUCTS: 'products',   // جدول الأصناف والمنتجات المركزية والشتلات
-  SALES: 'sales',         // جدول المبيعات وفواتير الكاشير الحية
-  BRANCHES: 'branches',   // جدول الفروع والمخازن المتعددة
-  SHIFTS: 'shifts',       // جدول الورديات وإغلاق صناديق الكاشير
-  TENANTS: 'tenants'      // مجموعة المستأجرين المتزامنة
+  USERS: 'users',                     // جدول الشركات والمشتركين
+  PRODUCTS: 'products',               // جدول الأصناف والمنتجات المركزية والشتلات
+  SALES: 'sales',                     // جدول المبيعات وفواتير الكاشير الحية
+  BRANCHES: 'branches',               // جدول الفروع والمخازن المتعددة
+  SHIFTS: 'shifts',                   // جدول الورديات وإغلاق صناديق الكاشير
+  TENANTS: 'tenants',                 // مجموعة المستأجرين المتزامنة
+  LOGIN_ACTIVITIES: 'login_activities', // جدول مراقبة حركات تسجيل الدخول الحية
+  SETTINGS: 'system_settings'         // إعدادات النظام وصلاحيات الكاشير
 };
 
 export const USERS_COLLECTION = COLLECTIONS.USERS;
@@ -42,6 +47,8 @@ export const SALES_COLLECTION = COLLECTIONS.SALES;
 export const BRANCHES_COLLECTION = COLLECTIONS.BRANCHES;
 export const SHIFTS_COLLECTION = COLLECTIONS.SHIFTS;
 export const TENANTS_COLLECTION = COLLECTIONS.TENANTS;
+export const LOGIN_ACTIVITIES_COLLECTION = COLLECTIONS.LOGIN_ACTIVITIES;
+export const SETTINGS_COLLECTION = COLLECTIONS.SETTINGS;
 
 // =========================================================================
 // 1. إدارة جدول الشركات والمشتركين (users collection)
@@ -344,6 +351,164 @@ export function subscribeToLiveSales(callback) {
     }, (err) => console.warn('Sales snapshot warning:', err));
   } catch (e) {
     return () => {};
+  }
+}
+
+/**
+ * تعديل رصيد صنف أو شتلة زراعية في Firestore مباشرة (صلاحيات المسؤول)
+ */
+export async function updateProductStockInFirebase(productId, newStock, reason = 'جرد وتعديل مباشر من المسؤول') {
+  try {
+    const docRef = doc(db, PRODUCTS_COLLECTION, String(productId));
+    const updateData = {
+      stock: Number(newStock),
+      last_adjustment: {
+        adjusted_to: Number(newStock),
+        reason,
+        adjusted_at: new Date().toISOString()
+      },
+      updated_at: new Date().toISOString()
+    };
+    await setDoc(docRef, updateData, { merge: true });
+    return { success: true };
+  } catch (error) {
+    console.error('Firebase update product stock error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * تعديل بيانات فاتورة مبيعات سابقة في Firestore وتحديث التاريخ والبنود
+ */
+export async function updateSaleInFirebase(saleId, updatedData) {
+  try {
+    const saleRef = doc(db, SALES_COLLECTION, String(saleId));
+    await setDoc(saleRef, {
+      ...updatedData,
+      updated_at: new Date().toISOString()
+    }, { merge: true });
+    return { success: true };
+  } catch (error) {
+    console.error('Firebase update sale error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * حذف فاتورة مبيعات من Firestore مع إعادة حساب الأرصدة
+ */
+export async function deleteSaleFromFirebase(saleId) {
+  try {
+    const saleRef = doc(db, SALES_COLLECTION, String(saleId));
+    await deleteDoc(saleRef);
+    return { success: true };
+  } catch (error) {
+    console.error('Firebase delete sale error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// =========================================================================
+// 5. مراقبة وتسجيل حركات الدخول الحية (login_activities collection)
+// =========================================================================
+
+/**
+ * تسجيل حركة دخول مستخدم أو كاشير فوراً في Firestore
+ */
+export async function logLoginActivityToFirebase(activityData) {
+  try {
+    const col = collection(db, LOGIN_ACTIVITIES_COLLECTION);
+    const docData = {
+      ...activityData,
+      user_id: activityData.user_id || activityData.id || 1,
+      user_name: activityData.user_name || activityData.name || 'مستخدم',
+      email: activityData.email || '—',
+      role: activityData.role || 'user',
+      tenant_name: activityData.tenant_name || 'منشأة زراعية',
+      ip_address: activityData.ip_address || '127.0.0.1',
+      user_agent: activityData.user_agent || navigator.userAgent || 'متصفح الويب',
+      login_at: activityData.login_at || new Date().toISOString().replace('T', ' ').slice(0, 19),
+      created_at: new Date().toISOString(),
+      firestore_timestamp: serverTimestamp()
+    };
+    const res = await addDoc(col, docData);
+    return { success: true, id: res.id };
+  } catch (error) {
+    console.warn('Firebase log activity warning:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * جلب سجلات تسجيل الدخول الحية عبر getDocs لتثبيتها فور تحميل الصفحة وتجنب اختفائها عند F5
+ */
+export async function fetchFirebaseLoginActivities() {
+  try {
+    const col = collection(db, LOGIN_ACTIVITIES_COLLECTION);
+    const q = query(col, limit(50));
+    const snapshot = await getDocs(q);
+    const list = [];
+    snapshot.forEach(docSnap => {
+      list.push({ id: docSnap.id, ...docSnap.data() });
+    });
+    // ترتيب تنازلي حسب وقت الدخول
+    list.sort((a, b) => new Date(b.login_at || 0) - new Date(a.login_at || 0));
+    return list;
+  } catch (error) {
+    console.warn('Firebase fetch login activities warning:', error);
+    return [];
+  }
+}
+
+/**
+ * مراقبة حية وفورية لتسجيل الدخول عبر onSnapshot
+ */
+export function subscribeToLiveLoginActivities(callback) {
+  try {
+    const col = collection(db, LOGIN_ACTIVITIES_COLLECTION);
+    const q = query(col, limit(50));
+    return onSnapshot(q, (snapshot) => {
+      const list = [];
+      snapshot.forEach(docSnap => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      list.sort((a, b) => new Date(b.login_at || 0) - new Date(a.login_at || 0));
+      if (list.length > 0) callback(list);
+    }, (err) => console.warn('Login activities snapshot warning:', err));
+  } catch (e) {
+    return () => {};
+  }
+}
+
+// =========================================================================
+// 6. إدارة صلاحيات الكاشير في Firestore (system_settings)
+// =========================================================================
+
+export async function saveCashierPermissionsToFirebase(permissions) {
+  try {
+    const docRef = doc(db, SETTINGS_COLLECTION, 'cashier_permissions');
+    await setDoc(docRef, {
+      ...permissions,
+      updated_at: new Date().toISOString()
+    }, { merge: true });
+    return { success: true };
+  } catch (error) {
+    console.warn('Firebase save cashier permissions error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function fetchCashierPermissionsFromFirebase() {
+  try {
+    const docRef = doc(db, SETTINGS_COLLECTION, 'cashier_permissions');
+    const snap = await getDocs(query(collection(db, SETTINGS_COLLECTION)));
+    let found = null;
+    snap.forEach(d => {
+      if (d.id === 'cashier_permissions') found = d.data();
+    });
+    return found;
+  } catch (error) {
+    return null;
   }
 }
 

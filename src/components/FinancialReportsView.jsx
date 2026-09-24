@@ -7,15 +7,31 @@ import {
   Users, 
   FileText, 
   Printer, 
-  CheckCircle2,
-  Calendar,
-  Building2,
-  AlertCircle
+  CheckCircle2, 
+  Calendar, 
+  CalendarDays,
+  Building2, 
+  AlertCircle,
+  ShoppingCart,
+  RefreshCw,
+  Sparkles
 } from 'lucide-react';
+import { safeFetch } from '../api/client';
 
-export default function FinancialReportsView({ branches, selectedBranch }) {
-  const [reportTab, setReportTab] = useState('trial_balance'); // 'trial_balance', 'pnl', 'balance_sheet', 'vat_return', 'ar_ap'
+export default function FinancialReportsView({ branches = [], selectedBranch = 'all' }) {
+  const [reportTab, setReportTab] = useState('smart_date_report'); // 'smart_date_report', 'trial_balance', 'pnl', 'balance_sheet', 'vat_return', 'ar_ap'
   
+  // Smart Date Range Report States
+  const [fromDate, setFromDate] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().split('T')[0];
+  });
+  const [toDate, setToDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [smartReportData, setSmartReportData] = useState(null);
+  const [filterType, setFilterType] = useState('all'); // 'all', 'sales', 'purchases', 'expenses'
+  const [branchFilter, setBranchFilter] = useState(selectedBranch || 'all');
+
   const [trialData, setTrialData] = useState(null);
   const [pnlData, setPnlData] = useState(null);
   const [balanceSheetData, setBalanceSheetData] = useState(null);
@@ -26,15 +42,28 @@ export default function FinancialReportsView({ branches, selectedBranch }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    setBranchFilter(selectedBranch || 'all');
+  }, [selectedBranch]);
+
+  useEffect(() => {
     fetchReportData();
-  }, [reportTab, selectedBranch]);
+  }, [reportTab, branchFilter, fromDate, toDate]);
 
   const fetchReportData = async () => {
     setLoading(true);
     try {
-      const branchParam = selectedBranch !== 'all' ? `?branchId=${selectedBranch}` : '';
+      const branchParam = branchFilter !== 'all' ? `?branchId=${branchFilter}` : '';
 
-      if (reportTab === 'trial_balance') {
+      if (reportTab === 'smart_date_report') {
+        const queryParams = new URLSearchParams();
+        if (fromDate) queryParams.set('fromDate', fromDate);
+        if (toDate) queryParams.set('toDate', toDate);
+        if (branchFilter && branchFilter !== 'all') queryParams.set('branchId', branchFilter);
+        const res = await safeFetch(`/api/reports/sales-purchases?${queryParams.toString()}`);
+        if (res && res.success) {
+          setSmartReportData(res.data);
+        }
+      } else if (reportTab === 'trial_balance') {
         const res = await fetch(`/api/reports/trial-balance${branchParam}`);
         const data = await res.json();
         if (data.success) setTrialData(data.data);
@@ -86,7 +115,16 @@ export default function FinancialReportsView({ branches, selectedBranch }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {/* Report Switcher & Actions */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-        <div style={{ display: 'flex', gap: '0.4rem', background: '#e2e8f0', padding: '0.3rem', borderRadius: '10px' }}>
+        <div style={{ display: 'flex', gap: '0.4rem', background: '#e2e8f0', padding: '0.3rem', borderRadius: '10px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setReportTab('smart_date_report')}
+            className={`btn ${reportTab === 'smart_date_report' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '0.45rem 1rem', fontSize: '0.85rem', fontWeight: 800, background: reportTab === 'smart_date_report' ? 'linear-gradient(135deg, #047857, #10b981)' : undefined }}
+          >
+            <CalendarDays size={16} />
+            <span>📊 التقارير الذكية بالتواريخ</span>
+          </button>
+
           <button
             onClick={() => setReportTab('trial_balance')}
             className={`btn ${reportTab === 'trial_balance' ? 'btn-primary' : 'btn-secondary'}`}
@@ -142,6 +180,386 @@ export default function FinancialReportsView({ branches, selectedBranch }) {
       {loading ? (
         <div className="card" style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
           جاري استخراج وتجميع الحسابات والقوائم المالية...
+        </div>
+      ) : (
+        <>
+          {/* ===================== 0. التقارير الذكية بالتواريخ ===================== */}
+          {reportTab === 'smart_date_report' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* Filter Control Box */}
+              <div className="card" style={{ padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{ background: '#ecfdf5', color: '#047857', padding: '0.45rem', borderRadius: '8px' }}>
+                      <CalendarDays size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '1.15rem', fontWeight: 900, color: '#0f172a', margin: 0 }}>
+                        تقرير المبيعات والمشتريات الذكي محدد بالتواريخ
+                      </h3>
+                      <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0.15rem 0 0 0' }}>
+                        استخراج فوري للإيرادات، تكاليف المشتريات، ضريبة القيمة المضافة 15%، وصافي الأرباح المحققة خلال الفترة.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Quick Date Presets */}
+                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                    {[
+                      { label: 'اليوم', getDates: () => { const t = new Date().toISOString().split('T')[0]; return [t, t]; } },
+                      { label: 'هذا الأسبوع', getDates: () => { const now = new Date(); const d = new Date(now.setDate(now.getDate() - 7)).toISOString().split('T')[0]; return [d, new Date().toISOString().split('T')[0]]; } },
+                      { label: 'هذا الشهر', getDates: () => { const now = new Date(); const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]; return [start, new Date().toISOString().split('T')[0]]; } },
+                      { label: 'الربع السنوي', getDates: () => { const now = new Date(); const start = new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString().split('T')[0]; return [start, new Date().toISOString().split('T')[0]]; } },
+                      { label: 'هذا العام (2026)', getDates: () => ['2026-01-01', new Date().toISOString().split('T')[0]] },
+                      { label: 'كافة الفترات', getDates: () => ['2020-01-01', new Date().toISOString().split('T')[0]] }
+                    ].map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          const [start, end] = preset.getDates();
+                          setFromDate(start);
+                          setToDate(end);
+                        }}
+                        style={{
+                          padding: '0.3rem 0.65rem',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          background: '#f8fafc',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          color: '#334155',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Date Inputs & Branch Selector */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', alignItems: 'flex-end', background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
+                      📅 من تاريخ (From Date)
+                    </label>
+                    <input
+                      type="date"
+                      value={fromDate}
+                      onChange={e => setFromDate(e.target.value)}
+                      className="form-input"
+                      style={{ width: '100%', padding: '0.45rem 0.65rem', fontWeight: 700 }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
+                      📅 إلى تاريخ (To Date)
+                    </label>
+                    <input
+                      type="date"
+                      value={toDate}
+                      onChange={e => setToDate(e.target.value)}
+                      className="form-input"
+                      style={{ width: '100%', padding: '0.45rem 0.65rem', fontWeight: 700 }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
+                      🏢 الفرع المستهدف
+                    </label>
+                    <select
+                      value={branchFilter}
+                      onChange={e => setBranchFilter(e.target.value)}
+                      className="form-select"
+                      style={{ width: '100%', padding: '0.45rem 0.65rem', fontWeight: 700 }}
+                    >
+                      <option value="all">🏢 كافة الفروع والمشاتل</option>
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>📍 {b.name_ar}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <button
+                      type="button"
+                      onClick={fetchReportData}
+                      className="btn btn-primary"
+                      style={{ width: '100%', padding: '0.55rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', background: '#047857' }}
+                    >
+                      <RefreshCw size={15} />
+                      <span>تحديث واستخراج التقرير</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Financial Summary KPI Cards */}
+              {smartReportData?.summary && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
+                  {/* Card 1: Gross Sales / Revenue */}
+                  <div className="card" style={{ borderTop: '4px solid #047857', padding: '1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#64748b' }}>إجمالي الإيرادات والمبيعات</span>
+                      <div style={{ background: '#ecfdf5', color: '#047857', padding: '0.35rem', borderRadius: '8px' }}>
+                        <TrendingUp size={18} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#047857' }} className="font-mono">
+                      {smartReportData.summary.total_sales_revenue.toLocaleString('ar-SA', { minimumFractionDigits: 2 })}
+                      <span style={{ fontSize: '0.85rem', marginRight: '0.35rem' }}>ر.س</span>
+                    </div>
+                    <div style={{ marginTop: '0.65rem', fontSize: '0.78rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '0.2rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>ضريبة مبيعات 15%:</span>
+                        <strong className="font-mono" style={{ color: '#d97706' }}>{smartReportData.summary.total_sales_vat.toLocaleString('ar-SA', { minimumFractionDigits: 2 })} ر.س</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>الإجمالي شامل الضريبة:</span>
+                        <strong className="font-mono" style={{ color: '#0f172a' }}>{smartReportData.summary.total_sales_grand.toLocaleString('ar-SA', { minimumFractionDigits: 2 })} ر.س</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
+                        <span>فواتير المبيعات:</span>
+                        <strong>{smartReportData.summary.sales_count} فاتورة (متوسط: {smartReportData.summary.average_sale.toFixed(2)} ر.س)</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Purchases & Cost */}
+                  <div className="card" style={{ borderTop: '4px solid #0284c7', padding: '1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#64748b' }}>إجمالي المشتريات والتكاليف</span>
+                      <div style={{ background: '#e0f2fe', color: '#0284c7', padding: '0.35rem', borderRadius: '8px' }}>
+                        <ShoppingCart size={18} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#0284c7' }} className="font-mono">
+                      {smartReportData.summary.total_purchases_cost.toLocaleString('ar-SA', { minimumFractionDigits: 2 })}
+                      <span style={{ fontSize: '0.85rem', marginRight: '0.35rem' }}>ر.س</span>
+                    </div>
+                    <div style={{ marginTop: '0.65rem', fontSize: '0.78rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '0.2rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>ضريبة مشتريات (مدخلات):</span>
+                        <strong className="font-mono" style={{ color: '#d97706' }}>{smartReportData.summary.total_purchases_vat.toLocaleString('ar-SA', { minimumFractionDigits: 2 })} ر.س</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>المصروفات التشغيلية:</span>
+                        <strong className="font-mono" style={{ color: '#475569' }}>{smartReportData.summary.total_expenses_cost.toLocaleString('ar-SA', { minimumFractionDigits: 2 })} ر.س</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
+                        <span>فواتير المشتريات:</span>
+                        <strong>{smartReportData.summary.purchases_count} فاتورة شراء</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 3: VAT 15% (ZATCA) */}
+                  <div className="card" style={{ borderTop: '4px solid #d97706', padding: '1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#64748b' }}>ضريبة القيمة المضافة (ZATCA 15%)</span>
+                      <div style={{ background: '#fef3c7', color: '#d97706', padding: '0.35rem', borderRadius: '8px' }}>
+                        <FileText size={18} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 900, color: smartReportData.summary.net_vat_due >= 0 ? '#b45309' : '#059669' }} className="font-mono">
+                      {Math.abs(smartReportData.summary.net_vat_due).toLocaleString('ar-SA', { minimumFractionDigits: 2 })}
+                      <span style={{ fontSize: '0.85rem', marginRight: '0.35rem' }}>ر.س</span>
+                    </div>
+                    <div style={{ marginTop: '0.65rem', fontSize: '0.78rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '0.2rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>ضريبة المخرجات (المبيعات):</span>
+                        <strong className="font-mono" style={{ color: '#047857' }}>+{smartReportData.summary.total_output_vat.toLocaleString('ar-SA', { minimumFractionDigits: 2 })} ر.س</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>ضريبة المدخلات (المشتريات):</span>
+                        <strong className="font-mono" style={{ color: '#dc2626' }}>-{smartReportData.summary.total_input_vat.toLocaleString('ar-SA', { minimumFractionDigits: 2 })} ر.س</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, color: smartReportData.summary.net_vat_due >= 0 ? '#92400e' : '#047857' }}>
+                        <span>الحالة الزكوية:</span>
+                        <span>{smartReportData.summary.net_vat_due >= 0 ? 'مستحق السداد للهيئة' : 'رصيد مسترد للمنشأة'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 4: Net Profit */}
+                  <div className="card" style={{ borderTop: `4px solid ${smartReportData.summary.is_profitable ? '#059669' : '#dc2626'}`, padding: '1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#64748b' }}>صافي الأرباح المحققة (Net Profit)</span>
+                      <div style={{ background: smartReportData.summary.is_profitable ? '#d1fae5' : '#fee2e2', color: smartReportData.summary.is_profitable ? '#059669' : '#dc2626', padding: '0.35rem', borderRadius: '8px' }}>
+                        <Scale size={18} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 900, color: smartReportData.summary.is_profitable ? '#059669' : '#dc2626' }} className="font-mono">
+                      {smartReportData.summary.net_profit.toLocaleString('ar-SA', { minimumFractionDigits: 2 })}
+                      <span style={{ fontSize: '0.85rem', marginRight: '0.35rem' }}>ر.س</span>
+                    </div>
+                    <div style={{ marginTop: '0.65rem', fontSize: '0.78rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '0.2rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>هامش صافي الربح:</span>
+                        <strong className="font-mono" style={{ color: smartReportData.summary.is_profitable ? '#059669' : '#dc2626' }}>
+                          {smartReportData.summary.profit_margin_percent}%
+                        </strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>الوعاء الربحي:</span>
+                        <span>المبيعات - المشتريات - المصاريف</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, color: smartReportData.summary.is_profitable ? '#047857' : '#dc2626' }}>
+                        <span>مؤشر الأداء:</span>
+                        <span>{smartReportData.summary.is_profitable ? '🟢 أرباح تشغيلية ممتازة' : '🔴 عجز في الهامش الربحي'}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Detail Breakdown Transactions Table */}
+              <div className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div>
+                    <h4 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                      سجل الحركات التفصيلي خلال الفترة ({fromDate} إلى {toDate})
+                    </h4>
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0.2rem 0 0 0' }}>
+                      بيانات كافة فواتير المبيعات الصادرة، فواتير الشراء، وسندات المصروفات.
+                    </p>
+                  </div>
+
+                  {/* Filter by Category */}
+                  <div style={{ display: 'flex', gap: '0.35rem', background: '#f1f5f9', padding: '0.25rem', borderRadius: '8px' }}>
+                    {[
+                      { id: 'all', label: 'كافة الحركات' },
+                      { id: 'sales', label: `المبيعات (${smartReportData?.sales?.length || 0})` },
+                      { id: 'purchases', label: `المشتريات (${smartReportData?.purchases?.length || 0})` },
+                      { id: 'expenses', label: `المصروفات (${smartReportData?.expenses?.length || 0})` }
+                    ].map(f => (
+                      <button
+                        key={f.id}
+                        onClick={() => setFilterType(f.id)}
+                        style={{
+                          padding: '0.35rem 0.75rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          background: filterType === f.id ? '#047857' : 'transparent',
+                          color: filterType === f.id ? '#ffffff' : '#475569',
+                          fontSize: '0.78rem',
+                          fontWeight: 800,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div className="table-wrapper">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>رقم المستند</th>
+                        <th>النوع</th>
+                        <th>التاريخ</th>
+                        <th>الطرف / العميل / المورد</th>
+                        <th>الفرع</th>
+                        <th>المبلغ الخاضع للضريبة</th>
+                        <th>ضريبة 15%</th>
+                        <th>الإجمالي شامل الضريبة</th>
+                        <th>طريقة الدفع</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Render Rows Based on Filter */}
+                      {(() => {
+                        const rows = [];
+                        if (filterType === 'all' || filterType === 'sales') {
+                          (smartReportData?.sales || []).forEach(s => rows.push({
+                            id: 'sale-' + s.id,
+                            docNo: s.invoice_number || s.invoiceNumber,
+                            type: 'sales',
+                            typeLabel: 'فاتورة مبيعات',
+                            date: s.issue_date || s.created_at?.split('T')[0],
+                            party: s.customer_name || 'عميل نقدي عام',
+                            branch: s.branch_name || 'الفرع الرئيسي',
+                            subtotal: Number(s.subtotal || 0),
+                            vat: Number(s.vat_total || s.vat_amount || 0),
+                            grand: Number(s.grand_total || s.total_amount || 0),
+                            method: s.payment_method === 'cash' ? 'نقداً' : s.payment_method === 'card' ? 'شبكة / مدى' : s.payment_method === 'credit' ? 'آجل' : 'تحويل بنكي'
+                          }));
+                        }
+                        if (filterType === 'all' || filterType === 'purchases') {
+                          (smartReportData?.purchases || []).forEach(p => rows.push({
+                            id: 'pur-' + p.id,
+                            docNo: p.invoice_number,
+                            type: 'purchase',
+                            typeLabel: 'فاتورة مشتريات',
+                            date: p.invoice_date || p.date,
+                            party: p.vendor_name || 'مورد بضائع وشتلات',
+                            branch: p.branch_name || 'الفرع الرئيسي',
+                            subtotal: Number(p.subtotal || 0),
+                            vat: Number(p.vat_total || p.vat_amount || 0),
+                            grand: Number(p.grand_total || 0),
+                            method: p.payment_method === 'cash' ? 'نقداً' : 'تحويل بنكي'
+                          }));
+                        }
+                        if (filterType === 'all' || filterType === 'expenses') {
+                          (smartReportData?.expenses || []).forEach(e => rows.push({
+                            id: 'exp-' + e.id,
+                            docNo: 'EXP-' + e.id,
+                            type: 'expense',
+                            typeLabel: 'سند مصروف',
+                            date: e.date,
+                            party: e.description || e.category,
+                            branch: e.branch_name || 'الفرع الرئيسي',
+                            subtotal: Number(e.amount || 0),
+                            vat: Number(e.vat_amount || 0),
+                            grand: Number((e.amount || 0) + (e.vat_amount || 0)),
+                            method: 'نقداً'
+                          }));
+                        }
+
+                        if (rows.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan="9" style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>
+                                لا توجد فواتير أو حركات مسجلة ضمن المدة المحددة ({fromDate} إلى {toDate})
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return rows.map(r => (
+                          <tr key={r.id}>
+                            <td className="font-mono" style={{ fontWeight: 800, color: r.type === 'sales' ? '#047857' : r.type === 'purchase' ? '#0284c7' : '#9333ea' }}>
+                              {r.docNo}
+                            </td>
+                            <td>
+                              <span className={`badge ${r.type === 'sales' ? 'badge-success' : r.type === 'purchase' ? 'badge-info' : 'badge-warning'}`}>
+                                {r.typeLabel}
+                              </span>
+                            </td>
+                            <td>{r.date}</td>
+                            <td style={{ fontWeight: 700 }}>{r.party}</td>
+                            <td><span className="badge badge-secondary">{r.branch}</span></td>
+                            <td className="font-mono">{r.subtotal.toFixed(2)} ر.س</td>
+                            <td className="font-mono" style={{ color: '#d97706', fontWeight: 700 }}>{r.vat.toFixed(2)} ر.س</td>
+                            <td className="font-mono" style={{ fontWeight: 800, color: '#0f172a' }}>{r.grand.toFixed(2)} ر.س</td>
+                            <td><span className="badge badge-secondary">{r.method}</span></td>
+                          </tr>
+                        ));
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===================== 1. ميزان المراجعة ===================== */}�لمالية...
         </div>
       ) : (
         <>

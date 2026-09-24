@@ -28,6 +28,7 @@ export default function Header({
   onOpenTouchPos,
   onOpenBackups,
   onOpenDeliveryOrders,
+  onOpenCashierPermissions,
   currentTenant,
   currentUser,
   products = [],
@@ -164,15 +165,20 @@ export default function Header({
             <div style={{
               position: 'absolute',
               top: 'calc(100% + 8px)',
-              left: 0,
-              width: '320px',
+              left: 'auto',
+              right: 0,
+              width: 'auto',
+              minWidth: '300px',
+              maxWidth: 'min(94vw, 460px)',
               background: 'var(--card-bg)',
               border: '1px solid var(--border-color)',
               borderRadius: '12px',
-              boxShadow: '0 12px 28px rgba(0, 0, 0, 0.25)',
+              boxShadow: '0 12px 32px rgba(0, 0, 0, 0.28)',
               padding: '1rem',
               zIndex: 100,
-              animation: 'fadeIn 0.15s ease-out'
+              animation: 'fadeIn 0.15s ease-out',
+              whiteSpace: 'normal',
+              wordBreak: 'break-word'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 800, fontSize: '0.875rem', color: '#047857' }}>
@@ -199,9 +205,10 @@ export default function Header({
                   marginBottom: '0.65rem',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.4rem'
+                  gap: '0.4rem',
+                  lineHeight: '1.4'
                 }}>
-                  <span>⏳</span>
+                  <span style={{ fontSize: '1.1rem' }}>⏳</span>
                   <span><strong>تنبيه الاشتراك التجريبي:</strong> ينتهي اشتراكك في <strong>{currentTenant.trial_ends_at}</strong>. تواصل مع الإدارة للترقية.</span>
                 </div>
               )}
@@ -232,16 +239,16 @@ export default function Header({
                         fontSize: '0.8rem'
                       }}
                     >
-                      <div style={{ overflow: 'hidden', paddingLeft: '0.5rem' }}>
-                        <div style={{ fontWeight: 700, color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                      <div style={{ paddingLeft: '0.5rem', flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text-main)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.3' }}>
                           {p.name_ar}
                         </div>
                         <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                           {p.category}
                         </div>
                       </div>
-                      <div style={{ textAlign: 'left', flexShrink: 0 }}>
-                        <span style={{ fontWeight: 900, color: '#dc2626', background: '#fee2e2', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>
+                      <div style={{ textAlign: 'left', flexShrink: 0, marginRight: '0.35rem' }}>
+                        <span style={{ fontWeight: 900, color: '#dc2626', background: '#fee2e2', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                           متبقي: {p.stock ?? p.total_stock ?? 0} {p.unit || 'شتلة'}
                         </span>
                       </div>
@@ -390,6 +397,18 @@ export default function Header({
               <ArrowRightLeft size={16} />
               <span>{t('stock_transfer', lang)}</span>
             </button>
+
+            {onOpenCashierPermissions && (
+              <button 
+                onClick={onOpenCashierPermissions}
+                className="btn btn-secondary"
+                style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem', color: '#047857', borderColor: '#10b981', background: 'rgba(16, 185, 129, 0.08)' }}
+                title="التحكم في صلاحيات الكاشير (الخصم، الحذف، والبيع)"
+              >
+                <ShieldCheck size={16} />
+                <span>صلاحيات الكاشير</span>
+              </button>
+            )}
           </>
         )}
       </div>

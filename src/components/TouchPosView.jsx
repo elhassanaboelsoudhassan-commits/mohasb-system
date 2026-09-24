@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { safeFetch } from '../api/client';
+import { safeFetch, LocalSaaSStorage } from '../api/client';
 import PrintableInvoiceModal from './PrintableInvoiceModal';
 import CashierShiftsModal from './CashierShiftsModal';
 
@@ -21,6 +21,30 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
   const [processing, setProcessing] = useState(false);
   const [completedInvoice, setCompletedInvoice] = useState(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+
+  // صلاحيات الكاشير من الإدارة
+  const [cashierPermissions, setCashierPermissions] = useState(() => {
+    try {
+      return LocalSaaSStorage.getCashierPermissions();
+    } catch {
+      return {
+        allow_discount: true,
+        max_discount_percent: 15,
+        allow_delete_items: true,
+        allow_price_override: false,
+        allow_credit_sales: true,
+        supervisor_pin: '1234'
+      };
+    }
+  });
+
+  useEffect(() => {
+    safeFetch('/api/cashier-permissions').then(res => {
+      if (res && res.success && res.data) {
+        setCashierPermissions(res.data);
+      }
+    }).catch(() => {});
+  }, []);
 
   // إدارة ورديات الكاشير وجرد الصندوق
   const [currentShift, setCurrentShift] = useState(null);
@@ -147,8 +171,24 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
     });
   };
 
+  const verifySupervisorPin = () => {
+    const isRestricted = currentUser?.role === 'cashier' || (!currentUser?.role?.includes('admin'));
+    if (!cashierPermissions.allow_delete_items && isRestricted) {
+      const pin = window.prompt('🔒 تنبيه: حذف الأصناف مقيد. يرجى إدخال الرقم السري للمشرف للمتابعة:');
+      if (!pin || pin.trim() !== String(cashierPermissions.supervisor_pin || '1234').trim()) {
+        alert('❌ الرقم السري للمشرف غير صحيح! تم إلغاء عملية الحذف.');
+        return false;
+      }
+    }
+    return true;
+  };
+
   const updateQty = (id, delta) => {
     setCart(prev => {
+      const item = prev.find(i => i.id === id);
+      if (item && item.qty + delta <= 0) {
+        if (!verifySupervisorPin()) return prev;
+      }
       return prev.map(item => {
         if (item.id === id) {
           const newQty = item.qty + delta;
@@ -165,11 +205,13 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
   };
 
   const removeFromCart = (id) => {
+    if (!verifySupervisorPin()) return;
     setCart(prev => prev.filter(i => i.id !== id));
   };
 
   const clearCart = () => {
     if (cart.length === 0) return;
+    if (!verifySupervisorPin()) return;
     if (window.confirm('هل أنت متأكد من تفريغ السلة؟')) {
       setCart([]);
       setDiscountPercent(0);
@@ -781,21 +823,27 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
           {/* الخصم السريع */}
           <div className="flex items-center justify-between gap-2 mb-2 bg-slate-900/50 p-1.5 rounded-xl border border-slate-700/50">
             <span className="text-xs text-slate-300 font-medium">خصم فوري:</span>
-            <div className="flex items-center gap-1">
-              {[0, 5, 10, 15].map(pct => (
-                <button
-                  key={pct}
-                  onClick={() => setDiscountPercent(pct)}
-                  className={`px-2 py-0.5 text-xs rounded-lg font-bold ${
-                    discountPercent === pct
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {pct}%
-                </button>
-              ))}
-            </div>
+            {!cashierPermissions.allow_discount ? (
+              <span className="text-[11px] text-amber-400 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-900/40">
+                🔒 مقيد من الإدارة
+              </span>
+            ) : (
+              <div className="flex items-center gap-1">
+                {[0, 5, 10, 15].filter(p => p <= (cashierPermissions.max_discount_percent || 100)).map(pct => (
+                  <button
+                    key={pct}
+                    onClick={() => setDiscountPercent(pct)}
+                    className={`px-2 py-0.5 text-xs rounded-lg font-bold ${
+                      discountPercent === pct
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* ملخص الحساب والإجمالي */}

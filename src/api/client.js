@@ -7,7 +7,14 @@ import {
   saveProductToFirebase, 
   saveSaleToFirebase, 
   saveBranchToFirebase,
-  updateTenantZatcaInFirestore
+  updateTenantZatcaInFirestore,
+  logLoginActivityToFirebase,
+  fetchFirebaseLoginActivities,
+  updateProductStockInFirebase,
+  updateSaleInFirebase,
+  deleteSaleFromFirebase,
+  saveCashierPermissionsToFirebase,
+  fetchCashierPermissionsFromFirebase
 } from '../firebase';
 import {
   generateZatcaUblXml,
@@ -703,6 +710,68 @@ export class LocalSaaSStorage {
     return list.filter(t => t.tenant_id == tenantId);
   }
 
+  static getPurchaseInvoices(tenantId = 1) {
+    const list = this.get('purchase_invoices', [
+      {
+        id: 1,
+        tenant_id: tenantId,
+        invoice_number: 'PUR-2026-0001',
+        invoice_date: new Date().toISOString().split('T')[0],
+        vendor_name: 'شركة المشاتل الهولندية العالمية للتوريد',
+        branch_id: 1,
+        branch_name: 'فرع المشتل الرئيسي (الرياض)',
+        subtotal: 12400.00,
+        vat_total: 1860.00,
+        grand_total: 14260.00,
+        payment_method: 'bank_transfer',
+        items: [{ item_name: 'شتلات بونسيانا مستوردة', quantity: 100, unit_price: 124.00 }]
+      },
+      {
+        id: 2,
+        tenant_id: tenantId,
+        invoice_number: 'PUR-2026-0002',
+        invoice_date: new Date(Date.now() - 86400000 * 3).toISOString().split('T')[0],
+        vendor_name: 'مصنع الأسمدة العضوية الوطنية',
+        branch_id: 1,
+        branch_name: 'فرع المشتل الرئيسي (الرياض)',
+        subtotal: 4800.00,
+        vat_total: 720.00,
+        grand_total: 5520.00,
+        payment_method: 'cash',
+        items: [{ item_name: 'أسمدة NPK وكمبوست', quantity: 80, unit_price: 60.00 }]
+      }
+    ]);
+    return list.filter(p => p.tenant_id == tenantId);
+  }
+
+  static getExpenses(tenantId = 1) {
+    const list = this.get('expenses', [
+      {
+        id: 1,
+        tenant_id: tenantId,
+        branch_id: 1,
+        branch_name: 'فرع المشتل الرئيسي (الرياض)',
+        amount: 2200.00,
+        vat_amount: 330.00,
+        date: new Date().toISOString().split('T')[0],
+        description: 'صيانة شبكات الري وتشغيل مضخات الآبار',
+        category: 'صيانة وتشغيل'
+      },
+      {
+        id: 2,
+        tenant_id: tenantId,
+        branch_id: 1,
+        branch_name: 'فرع المشتل الرئيسي (الرياض)',
+        amount: 1800.00,
+        vat_amount: 270.00,
+        date: new Date(Date.now() - 86400000 * 4).toISOString().split('T')[0],
+        description: 'وقود شاحنات توزيع الشتلات ونقل التربة',
+        category: 'نقليات ووقود'
+      }
+    ]);
+    return list.filter(e => e.tenant_id == tenantId);
+  }
+
   static resetToDemoData() {
     this.set('tenants', SEED_TENANTS);
     this.set('users', SEED_USERS);
@@ -722,19 +791,42 @@ export class LocalSaaSStorage {
 
   static logActivity(user, tenantName) {
     const list = this.getActivities();
-    list.unshift({
+    const act = {
       id: Date.now(),
       user_id: user.id,
-      user_name: user.name,
-      email: user.email,
-      role: user.role,
+      user_name: user.name || user.username || 'مستخدم',
+      email: user.email || '—',
+      role: user.role || 'cashier',
       tenant_name: tenantName || (user.role === 'super_admin' ? 'المنظومة المركزية (Super Admin)' : 'شركة زراعية'),
       ip_address: '127.0.0.1',
       user_agent: 'المتصفح المباشر',
       login_at: new Date().toISOString().replace('T', ' ').slice(0, 19)
-    });
+    };
+    list.unshift(act);
     this.set('login_activities', list.slice(0, 50));
     window.dispatchEvent(new CustomEvent('suwayan_activity_logged'));
+
+    // ⚡ إرسال حركة تسجيل الدخول فوراً إلى Firebase Firestore للمراقبة الحية
+    try {
+      logLoginActivityToFirebase(act).catch(e => console.warn('Live login Firestore log notice:', e));
+    } catch (e) {}
+  }
+
+  static getCashierPermissions() {
+    return this.get('cashier_permissions', {
+      allow_discounts: true,
+      max_discount_percent: 15,
+      allow_delete_items: true,
+      allow_price_override: false,
+      allow_credit_sales: true,
+      allow_void_invoice: true,
+      require_supervisor_pin: false
+    });
+  }
+
+  static setCashierPermissions(perms) {
+    this.set('cashier_permissions', perms);
+    window.dispatchEvent(new CustomEvent('suwayan_permissions_updated', { detail: perms }));
   }
 }
 
@@ -1221,6 +1313,166 @@ function handleLocalFallback(url, options, tenantId) {
     };
   }
 
+  // 6.1 تعديل فاتورة قديمة وتغيير تاريخها وإعادة حساب الأرصدة والضريبة (صلاحيات المسؤول)
+  if (path.includes('/api/invoices') && (method === 'PUT' || path.includes('/update'))) {
+    const invoices = LocalSaaSStorage.getInvoices(tenantId);
+    const targetId = body.id || (path.split('/api/invoices/')[1]?.split('/')[0]);
+    const invIndex = invoices.findIndex(i => i.id == targetId || i.invoice_number == targetId);
+
+    if (invIndex === -1) {
+      return { success: false, error: 'الفاتورة غير موجودة أو تم حذفها' };
+    }
+
+    const currentInv = invoices[invIndex];
+    const newItems = body.items || currentInv.items || [];
+    let subtotal = 0;
+    newItems.forEach(it => {
+      subtotal += (Number(it.quantity) || 1) * (Number(it.unit_price) || 0);
+    });
+    const vatTotal = Number((subtotal * 0.15).toFixed(2));
+    const grandTotal = Number((subtotal + vatTotal).toFixed(2));
+
+    const tenants = LocalSaaSStorage.getTenants();
+    const activeTenant = tenants.find(x => x.id == tenantId) || tenants[0];
+
+    const updatedInv = {
+      ...currentInv,
+      customer_name: body.customer_name || currentInv.customer_name,
+      customer_vat: body.customer_vat !== undefined ? body.customer_vat : currentInv.customer_vat,
+      customer_phone: body.customer_phone !== undefined ? body.customer_phone : currentInv.customer_phone,
+      payment_method: body.payment_method || currentInv.payment_method,
+      issue_date: body.issue_date || currentInv.issue_date,
+      issue_time: body.issue_time || currentInv.issue_time,
+      subtotal,
+      vat_total: vatTotal,
+      grand_total: grandTotal,
+      items: newItems,
+      is_edited_by_admin: true,
+      last_edited_at: new Date().toISOString()
+    };
+
+    // إعادة توليد ZATCA XML والهاش المشفر وQR المرحلة الثانية
+    const zatcaXml = generateZatcaUblXml(updatedInv, activeTenant);
+    const xmlHash = generateSha256Hex(zatcaXml);
+    const cryptographicStamp = `ZATCA_STAMP_${generateSha256Hex((updatedInv.invoice_number || 'INV') + grandTotal).slice(0, 32)}`;
+    const qrBase64 = generateZatcaPhase2QR({
+      sellerName: activeTenant?.company_name_ar || activeTenant?.name_ar || 'شركة ومشاتل الصويان الزراعية',
+      vatNumber: activeTenant?.vat_number || '310984752000003',
+      timestamp: `${updatedInv.issue_date}T${updatedInv.issue_time}Z`,
+      totalAmount: grandTotal,
+      vatAmount: vatTotal,
+      xmlHash: xmlHash,
+      cryptographicStamp: cryptographicStamp
+    });
+
+    updatedInv.zatca_xml = zatcaXml;
+    updatedInv.zatca_hash = xmlHash;
+    updatedInv.zatca_qr = qrBase64;
+    updatedInv.cryptographic_stamp = cryptographicStamp;
+
+    invoices[invIndex] = updatedInv;
+    LocalSaaSStorage.set('invoices', invoices);
+
+    // المزامنة والتحديث في Firestore
+    try {
+      updateSaleInFirebase(updatedInv.id, updatedInv).catch(e => console.warn('Firebase update sale notice:', e));
+    } catch (e) {}
+
+    return {
+      success: true,
+      message: `تم تعديل الفاتورة (${updatedInv.invoice_number}) وتحديث تاريخها وإعادة احتساب الضريبة والأرصدة بنجاح`,
+      data: updatedInv
+    };
+  }
+
+  // 6.2 حذف فاتورة قديمة وإعادة الكميات للمخزون (صلاحيات المسؤول)
+  if (path.includes('/api/invoices') && (method === 'DELETE' || path.includes('/delete'))) {
+    const invoices = LocalSaaSStorage.getInvoices(tenantId);
+    const targetId = body.id || (path.split('/api/invoices/')[1]?.split('/')[0]);
+    const invIndex = invoices.findIndex(i => i.id == targetId || i.invoice_number == targetId);
+
+    if (invIndex === -1) {
+      return { success: false, error: 'الفاتورة المطلوب حذفها غير موجودة' };
+    }
+
+    const removedInv = invoices[invIndex];
+    
+    // استرجاع الكميات المخصومة إلى المخزون تلقائياً
+    const products = LocalSaaSStorage.getProducts(tenantId);
+    if (removedInv.items && Array.isArray(removedInv.items)) {
+      removedInv.items.forEach(it => {
+        const prod = products.find(p => p.id == it.product_id || p.name_ar == (it.name_ar || it.item_name));
+        if (prod) {
+          prod.stock = (Number(prod.stock) || 0) + (Number(it.quantity) || 1);
+        }
+      });
+      LocalSaaSStorage.set('products', products);
+    }
+
+    invoices.splice(invIndex, 1);
+    LocalSaaSStorage.set('invoices', invoices);
+
+    // الحذف من Firestore
+    try {
+      deleteSaleFromFirebase(removedInv.id).catch(e => console.warn('Firebase delete sale notice:', e));
+    } catch (e) {}
+
+    return {
+      success: true,
+      message: `تم حذف الفاتورة (${removedInv.invoice_number}) بنجاح وإعادة جميع الكميات إلى رصيد المستودع والمخزن`,
+      deleted_id: targetId
+    };
+  }
+
+  // 6.3 تعديل رصيد صنف ومستودع مباشرة (صلاحيات المسؤول)
+  if (path.includes('/api/inventory/products/adjust-stock') || path.includes('/api/products/adjust-stock')) {
+    const products = LocalSaaSStorage.getProducts(tenantId);
+    const prodId = body.product_id || body.id;
+    const prod = products.find(p => p.id == prodId);
+    if (!prod) {
+      return { success: false, error: 'الصنف غير موجود في دليل الأصناف' };
+    }
+    const oldQty = prod.stock || 0;
+    prod.stock = Number(body.new_stock);
+    prod.last_adjustment = {
+      from: oldQty,
+      to: prod.stock,
+      reason: body.reason || 'تعديل رصيد مباشر من المسؤول',
+      date: new Date().toISOString()
+    };
+    LocalSaaSStorage.set('products', products);
+
+    // مزامنة Firestore
+    try {
+      updateProductStockInFirebase(prod.id, prod.stock, prod.last_adjustment.reason).catch(e => console.warn('Firebase stock update notice:', e));
+    } catch (e) {}
+
+    return {
+      success: true,
+      message: `تم تحديث رصيد الصنف (${prod.name_ar}) مباشرة إلى ${prod.stock} بنجاح`,
+      data: prod
+    };
+  }
+
+  // 6.4 استعلام وحفظ صلاحيات الكاشير
+  if (path.includes('/api/cashier-permissions')) {
+    if (method === 'POST' || method === 'PUT') {
+      LocalSaaSStorage.setCashierPermissions(body);
+      try {
+        saveCashierPermissionsToFirebase(body).catch(e => console.warn('Firebase permissions notice:', e));
+      } catch (e) {}
+      return {
+        success: true,
+        message: 'تم حفظ وتحديث صلاحيات موظفي الكاشير بنجاح وتطبيقها على جميع نقاط البيع',
+        data: body
+      };
+    }
+    return {
+      success: true,
+      data: LocalSaaSStorage.getCashierPermissions()
+    };
+  }
+
   // 7. الجرد السنوي
   if (path.includes('/api/inventory/annual-counts/prepare')) {
     const products = LocalSaaSStorage.getProducts(tenantId).map(p => ({
@@ -1639,6 +1891,91 @@ function handleLocalFallback(url, options, tenantId) {
       };
     }
     return { success: true, data: LocalSaaSStorage.getCentralProducts() };
+  }
+
+  // 22. تقرير المبيعات والمشتريات الذكي المحدد بالتواريخ
+  if (path.includes('/api/reports/sales-purchases')) {
+    const searchParams = url.includes('?') ? new URLSearchParams(url.split('?')[1]) : new URLSearchParams();
+    const fromDate = searchParams.get('fromDate') || '';
+    const toDate = searchParams.get('toDate') || '';
+    const branchId = searchParams.get('branchId') || 'all';
+
+    let sales = LocalSaaSStorage.getInvoices(tenantId);
+    let purchases = LocalSaaSStorage.getPurchaseInvoices(tenantId);
+    let expenses = LocalSaaSStorage.getExpenses(tenantId);
+
+    if (branchId && branchId !== 'all') {
+      sales = sales.filter(s => s.branch_id == branchId);
+      purchases = purchases.filter(p => p.branch_id == branchId);
+      expenses = expenses.filter(e => e.branch_id == branchId);
+    }
+
+    if (fromDate) {
+      sales = sales.filter(s => (s.issue_date || s.created_at?.split('T')[0] || '') >= fromDate);
+      purchases = purchases.filter(p => (p.invoice_date || p.date || '') >= fromDate);
+      expenses = expenses.filter(e => (e.date || '') >= fromDate);
+    }
+
+    if (toDate) {
+      sales = sales.filter(s => (s.issue_date || s.created_at?.split('T')[0] || '') <= toDate);
+      purchases = purchases.filter(p => (p.invoice_date || p.date || '') <= toDate);
+      expenses = expenses.filter(e => (e.date || '') <= toDate);
+    }
+
+    const totalSalesRevenue = sales.reduce((sum, s) => sum + (Number(s.subtotal) || 0), 0);
+    const totalSalesVat = sales.reduce((sum, s) => sum + (Number(s.vat_total || s.vat_amount) || 0), 0);
+    const totalSalesGrand = sales.reduce((sum, s) => sum + (Number(s.grand_total || s.total_amount) || 0), 0);
+
+    const totalPurchasesCost = purchases.reduce((sum, p) => sum + (Number(p.subtotal) || 0), 0);
+    const totalPurchasesVat = purchases.reduce((sum, p) => sum + (Number(p.vat_total || p.vat_amount) || 0), 0);
+    const totalPurchasesGrand = purchases.reduce((sum, p) => sum + (Number(p.grand_total) || 0), 0);
+
+    const totalExpensesCost = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const totalExpensesVat = expenses.reduce((sum, e) => sum + (Number(e.vat_amount) || 0), 0);
+
+    const totalOutputVat = totalSalesVat;
+    const totalInputVat = totalPurchasesVat + totalExpensesVat;
+    const netVatDue = totalOutputVat - totalInputVat;
+
+    const netProfit = totalSalesRevenue - totalPurchasesCost - totalExpensesCost;
+    const profitMargin = totalSalesRevenue > 0 ? ((netProfit / totalSalesRevenue) * 100) : 0;
+
+    return {
+      success: true,
+      data: {
+        period: {
+          from_date: fromDate || 'بداية النشاط',
+          to_date: toDate || 'اليوم'
+        },
+        summary: {
+          total_sales_revenue: Number(totalSalesRevenue.toFixed(2)),
+          total_sales_vat: Number(totalSalesVat.toFixed(2)),
+          total_sales_grand: Number(totalSalesGrand.toFixed(2)),
+          sales_count: sales.length,
+          average_sale: sales.length > 0 ? Number((totalSalesRevenue / sales.length).toFixed(2)) : 0,
+
+          total_purchases_cost: Number(totalPurchasesCost.toFixed(2)),
+          total_purchases_vat: Number(totalPurchasesVat.toFixed(2)),
+          total_purchases_grand: Number(totalPurchasesGrand.toFixed(2)),
+          purchases_count: purchases.length,
+
+          total_expenses_cost: Number(totalExpensesCost.toFixed(2)),
+          total_expenses_vat: Number(totalExpensesVat.toFixed(2)),
+          expenses_count: expenses.length,
+
+          total_output_vat: Number(totalOutputVat.toFixed(2)),
+          total_input_vat: Number(totalInputVat.toFixed(2)),
+          net_vat_due: Number(netVatDue.toFixed(2)),
+
+          net_profit: Number(netProfit.toFixed(2)),
+          profit_margin_percent: Number(profitMargin.toFixed(1)),
+          is_profitable: netProfit >= 0
+        },
+        sales,
+        purchases,
+        expenses
+      }
+    };
   }
 
   // افتراضي لأي مسار آخر

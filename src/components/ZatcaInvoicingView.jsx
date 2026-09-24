@@ -21,7 +21,9 @@ import {
   Check,
   Building,
   Lock,
-  Cpu
+  Cpu,
+  Edit3,
+  Trash2
 } from 'lucide-react';
 import PrintableInvoiceModal from './PrintableInvoiceModal';
 import { safeFetch } from '../api/client';
@@ -33,6 +35,7 @@ export default function ZatcaInvoicingView({
   branches = [], 
   selectedBranch, 
   currentTenant,
+  currentUser,
   onRefreshInvoices, 
   onOpenNewInvoice 
 }) {
@@ -41,6 +44,22 @@ export default function ZatcaInvoicingView({
   const [submittingZatca, setSubmittingZatca] = useState(false);
   const [zatcaResult, setZatcaResult] = useState(null);
   const [activeDetailTab, setActiveDetailTab] = useState('summary'); // 'summary', 'zatca_xml', 'qr'
+
+  // Admin Invoice Edit & Delete States
+  const [editingInvoice, setEditingInvoice] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    issue_date: '',
+    issue_time: '',
+    customer_name: '',
+    customer_vat: '',
+    notes: '',
+    items: []
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editSuccess, setEditSuccess] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin' || currentUser?.role === 'owner' || !currentUser?.role;
 
   // ZATCA Onboarding & Credentials State for Company Portal
   const [showOnboardModal, setShowOnboardModal] = useState(false);
@@ -424,14 +443,100 @@ export default function ZatcaInvoicingView({
                     </span>
                   </td>
                   <td>
-                    <button
-                      onClick={() => { setSelectedInvoice(inv); setZatcaResult(null); }}
-                      className="btn btn-secondary"
-                      style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
-                    >
-                      <Eye size={14} />
-                      <span>تفاصيل ZATCA</span>
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => { setSelectedInvoice(inv); setZatcaResult(null); }}
+                        className="btn btn-secondary"
+                        style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                        title="معاينة تفاصيل ZATCA Phase 2 والختم المشفر"
+                      >
+                        <Eye size={13} />
+                        <span>تفاصيل ZATCA</span>
+                      </button>
+
+                      {/* Admin Full Privileges: Edit Invoice & Change Date */}
+                      {isAdmin && (
+                        <button
+                          onClick={() => {
+                            setEditingInvoice(inv);
+                            const items = Array.isArray(inv.items) && inv.items.length > 0 ? inv.items.map(it => ({
+                              product_id: it.product_id || it.id || 1,
+                              name_ar: it.name_ar || it.item_name || 'صنف زراعي',
+                              quantity: Number(it.quantity || 1),
+                              unit_price: Number(it.unit_price || it.price || 0)
+                            })) : [
+                              { product_id: 1, name_ar: 'صنف زراعي', quantity: 1, unit_price: Number(inv.subtotal || 100) }
+                            ];
+                            setEditFormData({
+                              issue_date: inv.issue_date || new Date().toISOString().split('T')[0],
+                              issue_time: inv.issue_time || '10:00:00',
+                              customer_name: inv.customer_name || 'عميل نقدي عام',
+                              customer_vat: inv.customer_vat || '',
+                              notes: inv.notes || '',
+                              items
+                            });
+                          }}
+                          className="btn btn-secondary"
+                          style={{
+                            padding: '0.35rem 0.65rem',
+                            fontSize: '0.78rem',
+                            color: '#0284c7',
+                            borderColor: '#38bdf8',
+                            background: 'rgba(56, 189, 248, 0.08)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            fontWeight: 700
+                          }}
+                          title="تعديل بيانات الفاتورة وتغيير التاريخ وإعادة احتساب الأرصدة آلياً"
+                        >
+                          <Edit3 size={13} />
+                          <span>تعديل والتاريخ</span>
+                        </button>
+                      )}
+
+                      {/* Admin Full Privileges: Delete Invoice */}
+                      {isAdmin && (
+                        <button
+                          disabled={deletingId === inv.id}
+                          onClick={async () => {
+                            if (!window.confirm(`⚠️ تحذير إداري: هل أنت متأكد من رغبتك في حذف الفاتورة (${inv.invoice_number || inv.invoiceNumber}) نهائياً؟\n\nسيتم استرجاع الكميات المباعة إلى المستودع، إلغاء القيد المحاسبي، وتحديث الأرصدة تلقائياً في Firebase.`)) {
+                              return;
+                            }
+                            setDeletingId(inv.id);
+                            try {
+                              const res = await safeFetch(`/api/invoices?id=${inv.id}`, { method: 'DELETE' });
+                              if (res && res.success) {
+                                alert('✅ تم حذف الفاتورة واسترجاع أرصدة المخزون وتحديث Firebase بنجاح!');
+                                if (typeof onRefreshInvoices === 'function') onRefreshInvoices();
+                              } else {
+                                alert('فشل الحذف: ' + (res?.error || 'خطأ غير متوقع'));
+                              }
+                            } catch (e) {
+                              alert('خطأ: ' + e.message);
+                            } finally {
+                              setDeletingId(null);
+                            }
+                          }}
+                          className="btn btn-secondary"
+                          style={{
+                            padding: '0.35rem 0.65rem',
+                            fontSize: '0.78rem',
+                            color: '#dc2626',
+                            borderColor: '#fca5a5',
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            fontWeight: 700
+                          }}
+                          title="حذف الفاتورة نهائياً وإعادة حساب الأرصدة واسترجاع المخزون"
+                        >
+                          <Trash2 size={13} />
+                          <span>{deletingId === inv.id ? 'جاري الحذف...' : 'حذف'}</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -439,6 +544,284 @@ export default function ZatcaInvoicingView({
           </table>
         </div>
       </div>
+
+      {/* ===================== Admin Edit Invoice & Change Date Modal ===================== */}
+      {editingInvoice && (
+        <div className="modal-overlay" style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1rem',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div className="modal-content" style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '680px',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+              padding: '1.25rem 1.5rem',
+              color: '#ffffff',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <Edit3 size={22} />
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 900, margin: 0 }}>
+                    تعديل الفاتورة وتغيير التاريخ ({editingInvoice.invoice_number || editingInvoice.invoiceNumber})
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#e0f2fe', margin: '0.2rem 0 0 0' }}>
+                    صلاحية المسؤول المطلقة لتعديل التواريخ والبنود وإعادة حساب الأرصدة وضريبة ZATCA آلياً
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingInvoice(null)}
+                style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.25rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              setSavingEdit(true);
+              try {
+                const subtotal = editFormData.items.reduce((s, it) => s + (Number(it.quantity) * Number(it.unit_price)), 0);
+                const vat_total = subtotal * 0.15;
+                const grand_total = subtotal + vat_total;
+
+                const payload = {
+                  id: editingInvoice.id,
+                  invoice_number: editingInvoice.invoice_number || editingInvoice.invoiceNumber,
+                  issue_date: editFormData.issue_date,
+                  issue_time: editFormData.issue_time,
+                  customer_name: editFormData.customer_name,
+                  customer_vat: editFormData.customer_vat,
+                  notes: editFormData.notes,
+                  subtotal,
+                  vat_total,
+                  grand_total,
+                  items: editFormData.items
+                };
+
+                const res = await safeFetch('/api/invoices', {
+                  method: 'PUT',
+                  body: JSON.stringify(payload)
+                });
+
+                if (res && res.success) {
+                  setEditSuccess(true);
+                  setTimeout(() => {
+                    setEditSuccess(false);
+                    setEditingInvoice(null);
+                    if (typeof onRefreshInvoices === 'function') onRefreshInvoices();
+                  }, 1200);
+                } else {
+                  alert('فشل التعديل: ' + (res?.error || 'خطأ غير متوقع'));
+                }
+              } catch (err) {
+                alert('خطأ: ' + err.message);
+              } finally {
+                setSavingEdit(false);
+              }
+            }}>
+              <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '70vh', overflowY: 'auto' }}>
+                {editSuccess && (
+                  <div style={{
+                    background: '#ecfdf5',
+                    border: '1px solid #10b981',
+                    color: '#065f46',
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                    fontWeight: 800,
+                    fontSize: '0.85rem'
+                  }}>
+                    ✅ تم تعديل الفاتورة وتغيير التاريخ وتوليد كود ZATCA الجديد وإعادة احتساب الأرصدة وتثبيتها في Firebase!
+                  </div>
+                )}
+
+                {/* Date & Time Change */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', background: '#f0f9ff', padding: '1rem', borderRadius: '10px', border: '1px solid #bae6fd' }}>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 800, color: '#0369a1' }}>
+                      📅 تاريخ إصدار الفاتورة (يمكنك تغييره لأي تاريخ سابق)
+                    </label>
+                    <input
+                      required
+                      type="date"
+                      className="form-input font-mono"
+                      value={editFormData.issue_date}
+                      onChange={e => setEditFormData({ ...editFormData, issue_date: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 800, color: '#0369a1' }}>
+                      ⏰ وقت الإصدار
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input font-mono"
+                      value={editFormData.issue_time}
+                      onChange={e => setEditFormData({ ...editFormData, issue_time: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                {/* Customer Details */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label className="form-label">اسم العميل</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editFormData.customer_name}
+                      onChange={e => setEditFormData({ ...editFormData, customer_name: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">الرقم الضريبي للعميل</label>
+                    <input
+                      type="text"
+                      placeholder="310xxxxxxxxxxxx"
+                      className="form-input font-mono"
+                      value={editFormData.customer_vat}
+                      onChange={e => setEditFormData({ ...editFormData, customer_vat: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                {/* Items List */}
+                <div>
+                  <label className="form-label" style={{ fontWeight: 800 }}>بنود الفاتورة والكميات والأسعار</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {editFormData.items.map((it, idx) => (
+                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 40px', gap: '0.5rem', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          className="form-input"
+                          value={it.name_ar}
+                          onChange={e => {
+                            const newItems = [...editFormData.items];
+                            newItems[idx].name_ar = e.target.value;
+                            setEditFormData({ ...editFormData, items: newItems });
+                          }}
+                        />
+                        <input
+                          type="number"
+                          min="1"
+                          className="form-input font-mono"
+                          placeholder="الكمية"
+                          value={it.quantity}
+                          onChange={e => {
+                            const newItems = [...editFormData.items];
+                            newItems[idx].quantity = Number(e.target.value);
+                            setEditFormData({ ...editFormData, items: newItems });
+                          }}
+                        />
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="form-input font-mono"
+                          placeholder="السعر"
+                          value={it.unit_price}
+                          onChange={e => {
+                            const newItems = [...editFormData.items];
+                            newItems[idx].unit_price = Number(e.target.value);
+                            setEditFormData({ ...editFormData, items: newItems });
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (editFormData.items.length <= 1) return;
+                            const newItems = editFormData.items.filter((_, i) => i !== idx);
+                            setEditFormData({ ...editFormData, items: newItems });
+                          }}
+                          style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer' }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditFormData({
+                          ...editFormData,
+                          items: [...editFormData.items, { product_id: Date.now(), name_ar: 'صنف إضافي', quantity: 1, unit_price: 50 }]
+                        });
+                      }}
+                      className="btn btn-secondary"
+                      style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', alignSelf: 'flex-start', marginTop: '0.3rem' }}
+                    >
+                      + إضافة بند جديد
+                    </button>
+                  </div>
+                </div>
+
+                {/* Recalculated Balances Box */}
+                {(() => {
+                  const sub = editFormData.items.reduce((s, it) => s + (Number(it.quantity || 0) * Number(it.unit_price || 0)), 0);
+                  const vat = sub * 0.15;
+                  const grand = sub + vat;
+                  return (
+                    <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b' }}>إجمالي الخاضع للضريبة:</div>
+                        <strong className="font-mono" style={{ fontSize: '1rem' }}>{sub.toFixed(2)} ر.س</strong>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b' }}>ضريبة 15%:</div>
+                        <strong className="font-mono" style={{ fontSize: '1rem', color: '#d97706' }}>{vat.toFixed(2)} ر.س</strong>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b' }}>الإجمالي الجديد:</div>
+                        <strong className="font-mono" style={{ fontSize: '1.2rem', color: '#047857' }}>{grand.toFixed(2)} ر.س</strong>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="modal-footer" style={{ borderTop: '1px solid #e2e8f0', padding: '1rem 1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingInvoice(null)}
+                  className="btn btn-secondary"
+                  disabled={savingEdit}
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="btn btn-primary"
+                  style={{ background: '#0284c7', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1.25rem' }}
+                >
+                  <RefreshCw size={15} className={savingEdit ? 'animate-spin' : ''} />
+                  <span>{savingEdit ? 'جاري إعادة الحساب والحفظ...' : 'حفظ التعديلات وتثبيت الفاتورة'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ===================== ZATCA Onboarding & Credentials Modal ===================== */}
       {showOnboardModal && (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Store, 
   ShoppingCart, 
@@ -15,9 +15,11 @@ import {
   Banknote, 
   Sprout,
   AlertTriangle,
+  Lock,
+  Percent,
   X
 } from 'lucide-react';
-import { safeFetch } from '../api/client';
+import { safeFetch, LocalSaaSStorage } from '../api/client';
 import PrintableInvoiceModal from './PrintableInvoiceModal';
 
 export default function CashierPosView({ 
@@ -35,8 +37,33 @@ export default function CashierPosView({
   const [cart, setCart] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [discountPercent, setDiscountPercent] = useState(0);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [lastInvoice, setLastInvoice] = useState(null);
+
+  // Cashier Permissions State
+  const [cashierPermissions, setCashierPermissions] = useState(() => {
+    try {
+      return LocalSaaSStorage.getCashierPermissions();
+    } catch {
+      return {
+        allow_discount: true,
+        max_discount_percent: 15,
+        allow_delete_items: true,
+        allow_price_override: false,
+        allow_credit_sales: true,
+        supervisor_pin: '1234'
+      };
+    }
+  });
+
+  useEffect(() => {
+    safeFetch('/api/cashier-permissions').then(res => {
+      if (res && res.success && res.data) {
+        setCashierPermissions(res.data);
+      }
+    }).catch(() => {});
+  }, []);
 
   const activeBranchId = currentUser?.branch_id || branches[0]?.id || 1;
   const currentBranch = branches.find(b => b.id == activeBranchId) || branches[0];
@@ -55,6 +82,19 @@ export default function CashierPosView({
     }
     return true;
   });
+
+  // التحقق من الرقم السري للمشرف عند حذف أصناف إذا كانت الصلاحية مقيدة
+  const verifySupervisorPin = () => {
+    const isRestricted = currentUser?.role === 'cashier' || (!currentUser?.role?.includes('admin'));
+    if (!cashierPermissions.allow_delete_items && isRestricted) {
+      const pin = window.prompt('🔒 تنبيه: حذف الأصناف مقيد. يرجى إدخال الرقم السري للمشرف للمتابعة:');
+      if (!pin || pin.trim() !== String(cashierPermissions.supervisor_pin || '1234').trim()) {
+        alert('❌ الرقم السري للمشرف غير صحيح! تم إلغاء عملية الحذف.');
+        return false;
+      }
+    }
+    return true;
+  };
 
   // إضافة صنف إلى السلة
   const addToCart = (product) => {
@@ -82,15 +122,27 @@ export default function CashierPosView({
 
   const updateQuantity = (index, delta) => {
     const newCart = [...cart];
-    newCart[index].quantity += delta;
-    if (newCart[index].quantity <= 0) {
+    if (newCart[index].quantity + delta <= 0) {
+      if (!verifySupervisorPin()) return;
       newCart.splice(index, 1);
+    } else {
+      newCart[index].quantity += delta;
     }
     setCart(newCart);
   };
 
   const removeFromCart = (index) => {
+    if (!verifySupervisorPin()) return;
     setCart(cart.filter((_, i) => i !== index));
+  };
+
+  const clearCart = () => {
+    if (cart.length === 0) return;
+    if (!verifySupervisorPin()) return;
+    if (window.confirm('هل أنت متأكد من إفراغ السلة؟')) {
+      setCart([]);
+      setDiscountPercent(0);
+    }
   };
 
   // تبديل فئة السعر (تجزئة / جملة) وتحديث السلة
@@ -105,7 +157,9 @@ export default function CashierPosView({
     setCart(updatedCart);
   };
 
-  const subtotal = cart.reduce((sum, it) => sum + (it.quantity * it.unit_price), 0);
+  const rawSubtotal = cart.reduce((sum, it) => sum + (it.quantity * it.unit_price), 0);
+  const discountAmount = cashierPermissions.allow_discount ? (rawSubtotal * (Number(discountPercent) || 0) / 100) : 0;
+  const subtotal = Math.max(0, rawSubtotal - discountAmount);
   const vatTotal = subtotal * 0.15;
   const grandTotal = subtotal + vatTotal;
 
@@ -329,7 +383,7 @@ export default function CashierPosView({
             <h4 style={{ fontWeight: 800, fontSize: '1.05rem' }}>سلة البيع ({cart.length})</h4>
           </div>
           {cart.length > 0 && (
-            <button onClick={() => setCart([])} style={{ background: 'none', border: 'none', color: '#be123c', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
+            <button onClick={clearCart} style={{ background: 'none', border: 'none', color: '#be123c', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
               إفراغ السلة
             </button>
           )}
@@ -381,7 +435,7 @@ export default function CashierPosView({
                   <button onClick={() => updateQuantity(idx, 1)} style={{ width: '24px', height: '24px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                     <Plus size={12} />
                   </button>
-                  <button onClick={() => removeFromCart(idx)} style={{ background: 'none', border: 'none', color: '#be123c', cursor: 'pointer', padding: '0 0.2rem' }}>
+                  <button onClick={() => removeFromCart(idx)} style={{ background: 'none', border: 'none', color: '#be123c', cursor: 'pointer', padding: '0 0.2rem' }} title="حذف الصنف">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -389,6 +443,56 @@ export default function CashierPosView({
             ))
           )}
         </div>
+
+        {/* Discount Selector (Protected by Cashier Permissions) */}
+        {cart.length > 0 && (
+          <div style={{ background: '#f8fafc', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '0.6rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Percent size={13} style={{ color: '#047857' }} />
+                <span>خصم الكاشير:</span>
+              </span>
+              {!cashierPermissions.allow_discount ? (
+                <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                  <Lock size={11} /> غير مصرح
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                  الحد الأقصى المسموح: {cashierPermissions.max_discount_percent || 15}%
+                </span>
+              )}
+            </div>
+
+            {cashierPermissions.allow_discount ? (
+              <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                {[0, 5, 10, 15].filter(p => p <= (cashierPermissions.max_discount_percent || 100)).map(pct => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => setDiscountPercent(pct)}
+                    style={{
+                      flex: 1,
+                      padding: '3px 0',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      border: discountPercent === pct ? '1px solid #047857' : '1px solid #cbd5e1',
+                      background: discountPercent === pct ? '#047857' : '#ffffff',
+                      color: discountPercent === pct ? '#ffffff' : '#334155',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {pct === 0 ? 'بدون' : `${pct}%`}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.725rem', color: '#b45309', background: '#fef3c7', padding: '3px 6px', borderRadius: '4px' }}>
+                🔒 تم قفل صلاحية الخصم من قِبل إدارة النظام
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Payment Methods */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem', marginBottom: '0.75rem' }}>
@@ -423,28 +527,42 @@ export default function CashierPosView({
             💳 مدى / شبكة
           </button>
           <button
-            onClick={() => setPaymentMethod('credit')}
+            onClick={() => {
+              if (!cashierPermissions.allow_credit_sales && currentUser?.role === 'cashier') {
+                alert('🔒 البيع الآجل غير مصرح لحساب الكاشير!');
+                return;
+              }
+              setPaymentMethod('credit');
+            }}
+            disabled={!cashierPermissions.allow_credit_sales && currentUser?.role === 'cashier'}
             style={{
               padding: '0.4rem',
               borderRadius: '8px',
               border: paymentMethod === 'credit' ? '2px solid #047857' : '1px solid #e2e8f0',
-              background: paymentMethod === 'credit' ? '#ecfdf5' : '#f8fafc',
+              background: (!cashierPermissions.allow_credit_sales && currentUser?.role === 'cashier') ? '#f1f5f9' : paymentMethod === 'credit' ? '#ecfdf5' : '#f8fafc',
               fontWeight: 700,
               fontSize: '0.75rem',
-              cursor: 'pointer',
-              color: paymentMethod === 'credit' ? '#047857' : '#475569'
+              cursor: (!cashierPermissions.allow_credit_sales && currentUser?.role === 'cashier') ? 'not-allowed' : 'pointer',
+              color: (!cashierPermissions.allow_credit_sales && currentUser?.role === 'cashier') ? '#94a3b8' : paymentMethod === 'credit' ? '#047857' : '#475569',
+              opacity: (!cashierPermissions.allow_credit_sales && currentUser?.role === 'cashier') ? 0.6 : 1
             }}
           >
-            📝 آجل
+            📝 آجل {(!cashierPermissions.allow_credit_sales && currentUser?.role === 'cashier') ? '🔒' : ''}
           </button>
         </div>
 
         {/* Totals Summary */}
         <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.75rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#64748b' }}>
-            <span>المبلغ بدون ضريبة:</span>
+            <span>المبلغ قبل الضريبة:</span>
             <span className="font-mono">{subtotal.toFixed(2)} ر.س</span>
           </div>
+          {discountAmount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#be123c' }}>
+              <span>قيمة الخصم ({discountPercent}%):</span>
+              <span className="font-mono">-{discountAmount.toFixed(2)} ر.س</span>
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#d97706' }}>
             <span>ضريبة القيمة المضافة 15%:</span>
             <span className="font-mono">{vatTotal.toFixed(2)} ر.س</span>

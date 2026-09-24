@@ -7,13 +7,19 @@ import {
   PackageCheck, 
   Warehouse, 
   Search,
-  CheckCircle2
+  CheckCircle2,
+  Edit3,
+  Scale,
+  RefreshCw,
+  Sparkles
 } from 'lucide-react';
+import { safeFetch } from '../api/client';
 
 export default function InventoryView({ 
-  products, 
-  branches, 
+  products = [], 
+  branches = [], 
   selectedBranch, 
+  currentUser,
   onRefreshProducts, 
   onOpenTransfer,
   onOpenDamage 
@@ -21,6 +27,16 @@ export default function InventoryView({
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Direct Stock Inventory Adjustment State for Admin
+  const [adjustModalProduct, setAdjustModalProduct] = useState(null);
+  const [newStockQty, setNewStockQty] = useState('');
+  const [adjustReason, setAdjustReason] = useState('جرد دوري فعلي للمستودع');
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState(1);
+  const [adjustingStock, setAdjustingStock] = useState(false);
+  const [adjustSuccess, setAdjustSuccess] = useState(false);
+
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin' || currentUser?.role === 'owner' || !currentUser?.role;
 
   const [productForm, setProductForm] = useState({
     sku: '',
@@ -132,11 +148,13 @@ export default function InventoryView({
                 <th>شامل الضريبة 15%</th>
                 <th>الرصيد الإجمالي</th>
                 <th>توزيع المستودعات</th>
+                <th style={{ textAlign: 'center' }}>إجراءات الجرد والتعديل</th>
               </tr>
             </thead>
             <tbody>
               {filteredProducts.map(p => {
                 const priceWithVat = p.selling_price * 1.15;
+                const currentQty = p.stock !== undefined ? p.stock : (p.total_stock !== undefined ? p.total_stock : 0);
                 return (
                   <tr key={p.id}>
                     <td className="font-mono" style={{ fontWeight: 800, color: '#047857' }}>
@@ -154,18 +172,45 @@ export default function InventoryView({
                     <td className="font-mono" style={{ fontWeight: 700 }}>{p.selling_price?.toFixed(2)} ر.س</td>
                     <td className="font-mono" style={{ color: '#047857', fontWeight: 800 }}>{priceWithVat.toFixed(2)} ر.س</td>
                     <td>
-                      <span className={`badge ${p.stock > 10 ? 'badge-success' : p.stock > 0 ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: '0.85rem' }}>
-                        {p.stock} {p.unit}
+                      <span className={`badge ${currentQty > 10 ? 'badge-success' : currentQty > 0 ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: '0.85rem' }}>
+                        {currentQty} {p.unit}
                       </span>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', maxWidth: '300px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', maxWidth: '280px' }}>
                         {p.levels && p.levels.map((lvl, i) => (
                           <span key={i} style={{ fontSize: '0.725rem', background: '#f1f5f9', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
                             {lvl.warehouse_name}: <strong className="font-mono">{lvl.quantity}</strong>
                           </span>
                         ))}
                       </div>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        onClick={() => {
+                          setAdjustModalProduct(p);
+                          setNewStockQty(currentQty);
+                          setAdjustReason('جرد دوري فعلي للمستودع');
+                          setSelectedWarehouseId(1);
+                        }}
+                        className="btn btn-secondary"
+                        style={{
+                          padding: '0.35rem 0.75rem',
+                          fontSize: '0.78rem',
+                          color: '#047857',
+                          borderColor: '#10b981',
+                          background: 'rgba(16, 185, 129, 0.08)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          fontWeight: 800,
+                          cursor: 'pointer'
+                        }}
+                        title="تعديل كمية الصنف وجرد المستودع مباشرة بصلاحية المسؤول ومزامنتها مع Firebase"
+                      >
+                        <Edit3 size={13} />
+                        <span>تعديل الرصيد / جرد</span>
+                      </button>
                     </td>
                   </tr>
                 );
@@ -174,6 +219,206 @@ export default function InventoryView({
           </table>
         </div>
       </div>
+
+      {/* Direct Stock & Warehouse Inventory Adjustment Modal (Admin Privilege) */}
+      {adjustModalProduct && (
+        <div className="modal-overlay" style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1rem',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div className="modal-content" style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '540px',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #064e3b 0%, #047857 100%)',
+              padding: '1.25rem 1.5rem',
+              color: '#ffffff',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <Scale size={22} />
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 900, margin: 0 }}>
+                    تعديل كميات الأصناف وجرد المستودع مباشرة
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: '#a7f3d0', margin: '0.2rem 0 0 0' }}>
+                    صلاحية المسؤول المطلق (Admin) لتسوية الأرصدة وتثبيتها سحابياً في Firebase
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAdjustModalProduct(null)}
+                style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.25rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              setAdjustingStock(true);
+              try {
+                const res = await safeFetch('/api/inventory/products/adjust-stock', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    product_id: adjustModalProduct.id,
+                    new_stock: Number(newStockQty),
+                    reason: adjustReason,
+                    warehouse_id: selectedWarehouseId
+                  })
+                });
+
+                if (res && res.success) {
+                  setAdjustSuccess(true);
+                  setTimeout(() => {
+                    setAdjustSuccess(false);
+                    setAdjustModalProduct(null);
+                    onRefreshProducts();
+                  }, 1200);
+                } else {
+                  alert('فشل التعديل: ' + (res?.error || 'خطأ غير متوقع'));
+                }
+              } catch (err) {
+                alert('خطأ: ' + err.message);
+              } finally {
+                setAdjustingStock(false);
+              }
+            }}>
+              <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {adjustSuccess && (
+                  <div style={{
+                    background: '#ecfdf5',
+                    border: '1px solid #10b981',
+                    color: '#065f46',
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                    fontWeight: 800,
+                    fontSize: '0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <span>✅ تم تعديل رصيد المخزون وجرد المستودع بنجاح وتثبيته سحابياً في Firebase!</span>
+                  </div>
+                )}
+
+                {/* Product Info Box */}
+                <div style={{ background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>الصنف المختار:</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>{adjustModalProduct.name_ar}</div>
+                  <div style={{ fontSize: '0.78rem', color: '#047857', marginTop: '0.2rem' }} className="font-mono">
+                    SKU: {adjustModalProduct.sku} | الوحدة: {adjustModalProduct.unit || 'شتلة/قطعة'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155', marginTop: '0.4rem' }}>
+                    الرصيد الدفتري الحالي المسجل: <strong className="font-mono" style={{ color: '#047857' }}>{adjustModalProduct.stock !== undefined ? adjustModalProduct.stock : 0} {adjustModalProduct.unit}</strong>
+                  </div>
+                </div>
+
+                {/* New Stock Input */}
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 800, color: '#0f172a' }}>
+                    الكمية الفعلية الجديدة في المستودع (الرصيد بعد الجرد)
+                  </label>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="form-input font-mono"
+                    style={{ fontSize: '1.15rem', fontWeight: 800, padding: '0.6rem 0.8rem' }}
+                    value={newStockQty}
+                    onChange={e => setNewStockQty(e.target.value)}
+                  />
+                  {newStockQty !== '' && (
+                    <div style={{ marginTop: '0.4rem', fontSize: '0.8rem', fontWeight: 800 }}>
+                      {(() => {
+                        const current = Number(adjustModalProduct.stock !== undefined ? adjustModalProduct.stock : 0);
+                        const next = Number(newStockQty);
+                        const diff = next - current;
+                        if (diff > 0) {
+                          return <span style={{ color: '#059669' }}>🟢 تسوية بالزيادة: (+{diff} {adjustModalProduct.unit}) ستضاف للرصيد</span>;
+                        } else if (diff < 0) {
+                          return <span style={{ color: '#dc2626' }}>🔴 تسوية بالعجز: ({diff} {adjustModalProduct.unit}) ستخصم من الرصيد</span>;
+                        } else {
+                          return <span style={{ color: '#64748b' }}>⚪ الرصيد مطابق لا يوجد فرق</span>;
+                        }
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                {/* Warehouse Target */}
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 700 }}>المستودع المستهدف للجرد</label>
+                  <select
+                    className="form-select"
+                    value={selectedWarehouseId}
+                    onChange={e => setSelectedWarehouseId(Number(e.target.value))}
+                  >
+                    <option value="1">المستودع المركزي - صالة العرض</option>
+                    <option value="2">مستودع البيوت المحمية والمشاتل الشمالية</option>
+                    <option value="3">مستودع جدة الرئيسي</option>
+                    <option value="4">مستودع المنطقة الشرقية اللوجستي</option>
+                  </select>
+                </div>
+
+                {/* Reason */}
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 700 }}>سبب التعديل والتسوية</label>
+                  <select
+                    className="form-select"
+                    value={adjustReason}
+                    onChange={e => setAdjustReason(e.target.value)}
+                  >
+                    <option value="جرد دوري فعلي للمستودع">جرد دوري فعلي للمستودع</option>
+                    <option value="تسوية عجز جرد مخزني">تسوية عجز جرد مخزني</option>
+                    <option value="تسوية فائض مخزني غير مسجل">تسوية فائض مخزني غير مسجل</option>
+                    <option value="تعديل إداري معتمد من المشرف">تعديل إداري معتمد من المشرف</option>
+                    <option value="تصحيح خطأ إدخال سابق">تصحيح خطأ إدخال سابق</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="modal-footer" style={{ borderTop: '1px solid #e2e8f0', padding: '1rem 1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setAdjustModalProduct(null)}
+                  className="btn btn-secondary"
+                  disabled={adjustingStock}
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={adjustingStock}
+                  className="btn btn-primary"
+                  style={{ background: '#047857', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1.25rem' }}
+                >
+                  <RefreshCw size={15} className={adjustingStock ? 'animate-spin' : ''} />
+                  <span>{adjustingStock ? 'جاري التعديل والمزامنة...' : 'تثبيت الرصيد وجرد المستودع'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Add Product Modal */}
       {showAddProductModal && (

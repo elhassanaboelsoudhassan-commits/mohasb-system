@@ -34,7 +34,9 @@ import { safeFetch, LocalSaaSStorage } from '../api/client';
 import { 
   subscribeToLiveCompanies, 
   fetchFirebaseCompanies, 
-  updateTenantZatcaInFirestore 
+  updateTenantZatcaInFirestore,
+  fetchFirebaseLoginActivities,
+  subscribeToLiveLoginActivities
 } from '../firebase';
 
 export default function SuperAdminDashboard({ onImpersonateTenant }) {
@@ -133,7 +135,28 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
       }
     };
 
+    // ⚡ 1.2 استدعاء فوري مباشر لحركات تسجيل الدخول من Firestore لتثبيتها ضد F5
+    const loadImmediateFirestoreLogins = async () => {
+      try {
+        const directLogins = await fetchFirebaseLoginActivities();
+        if (directLogins && directLogins.length > 0) {
+          setLogins(prev => {
+            const merged = [...directLogins];
+            prev.forEach(p => {
+              if (!merged.some(m => m.id === p.id || (m.email === p.email && m.login_at === p.login_at))) {
+                merged.push(p);
+              }
+            });
+            return merged.slice(0, 50);
+          });
+        }
+      } catch (err) {
+        console.warn('Initial Firestore logins load error:', err);
+      }
+    };
+
     loadImmediateFirestoreAccounts();
+    loadImmediateFirestoreLogins();
     fetchSuperAdminData();
     fetchLiveLogins();
     fetchCentralProducts();
@@ -163,8 +186,9 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
       fetchCentralProducts(true);
     });
 
-    // ⚡ مراقبة حية وفورية عبر Firebase Firestore (onSnapshot)
+    // ⚡ مراقبة حية وفورية عبر Firebase Firestore (onSnapshot) للشركات وحركات الدخول
     let unsubscribeFirebase = () => {};
+    let unsubscribeLogins = () => {};
     try {
       unsubscribeFirebase = subscribeToLiveCompanies((fbCompanies) => {
         if (fbCompanies && fbCompanies.length > 0) {
@@ -194,6 +218,20 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
           });
         }
       });
+
+      unsubscribeLogins = subscribeToLiveLoginActivities((fbLogins) => {
+        if (fbLogins && fbLogins.length > 0) {
+          setLogins(prev => {
+            const merged = [...fbLogins];
+            prev.forEach(p => {
+              if (!merged.some(m => m.id === p.id || (m.email === p.email && m.login_at === p.login_at))) {
+                merged.push(p);
+              }
+            });
+            return merged.slice(0, 50);
+          });
+        }
+      });
     } catch (e) {
       console.warn('Firebase live listener init note:', e);
     }
@@ -202,6 +240,7 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
       clearInterval(interval);
       window.removeEventListener('suwayan_tenant_registered', handleTenantRegistered);
       if (typeof unsubscribeFirebase === 'function') unsubscribeFirebase();
+      if (typeof unsubscribeLogins === 'function') unsubscribeLogins();
     };
   }, []);
 

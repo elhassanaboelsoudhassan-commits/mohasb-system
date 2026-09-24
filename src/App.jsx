@@ -27,6 +27,7 @@ import InventoryTransfersView from './components/InventoryTransfersView';
 import FinancialVouchersView from './components/FinancialVouchersView';
 import BackupManagerModal from './components/BackupManagerModal';
 import DeliveryOrdersModal from './components/DeliveryOrdersModal';
+import CashierPermissionsModal from './components/CashierPermissionsModal';
 import PaymentGatewaysView from './components/PaymentGatewaysView';
 import SmartMobileInventoryAudit from './components/SmartMobileInventoryAudit';
 import AiAssistantWidget from './components/AiAssistantWidget';
@@ -94,6 +95,7 @@ export default function App() {
   const [showDamageModal, setShowDamageModal] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
+  const [showCashierPermissionsModal, setShowCashierPermissionsModal] = useState(false);
 
   // Success Notification
   const [notification, setNotification] = useState(null);
@@ -324,6 +326,7 @@ export default function App() {
           onOpenTouchPos={() => setActiveTab('touch_pos')}
           onOpenBackups={() => setShowBackupModal(true)}
           onOpenDeliveryOrders={() => setShowDeliveryModal(true)}
+          onOpenCashierPermissions={() => setShowCashierPermissionsModal(true)}
           currentTenant={currentTenant}
           currentUser={currentUser}
           products={products}
@@ -538,6 +541,8 @@ export default function App() {
               branches={branches}
               selectedBranch={selectedBranch}
               currentTenant={currentTenant}
+              currentUser={currentUser}
+              products={products}
               onRefreshInvoices={() => { fetchInvoices(); fetchJournalEntries(); fetchSummary(); }}
               onOpenNewInvoice={() => setShowInvoiceModal(true)}
             />
@@ -549,6 +554,7 @@ export default function App() {
               products={products}
               branches={branches}
               selectedBranch={selectedBranch}
+              currentUser={currentUser}
               onRefreshProducts={() => { fetchProducts(); fetchSummary(); }}
               onOpenTransfer={() => setShowTransferModal(true)}
               onOpenDamage={() => setShowDamageModal(true)}
@@ -560,6 +566,7 @@ export default function App() {
             <FinancialReportsView 
               branches={branches}
               selectedBranch={selectedBranch}
+              currentUser={currentUser}
             />
           )}
         </main>
@@ -639,6 +646,19 @@ export default function App() {
         <DeliveryOrdersModal 
           activeTenant={currentTenant}
           onClose={() => setShowDeliveryModal(false)}
+        />
+      )}
+
+      {/* Cashier Permissions Configuration Modal */}
+      {showCashierPermissionsModal && (
+        <CashierPermissionsModal 
+          onClose={() => setShowCashierPermissionsModal(false)}
+          onSuccess={(perm) => {
+            showSuccessToast(
+              'تم حفظ وتثبيت صلاحيات الكاشير بنجاح!',
+              'تم تحديث القيود والصلاحيات على مستوى النظام ونقاط البيع السحابية.'
+            );
+          }}
         />
       )}
 
