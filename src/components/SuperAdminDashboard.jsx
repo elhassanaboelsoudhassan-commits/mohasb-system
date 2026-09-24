@@ -262,17 +262,38 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
       ]);
       if (tenantsData && tenantsData.success) {
         setTenants(prev => {
-          if (prev.length > 0 && tenantsData.data.length > prev.length) {
-            const newest = tenantsData.data[0];
-            setNewTenantAlert(`🔔 شركة جديدة مسجلة الآن: ${newest.name_ar || newest.company_name_ar} (المالك: ${newest.owner_name})`);
-            setTimeout(() => setNewTenantAlert(null), 7000);
-          }
-          return tenantsData.data;
+          const apiTenants = tenantsData.data || [];
+          const merged = [...apiTenants];
+          prev.forEach(p => {
+            if (!merged.some(m => (m.id && String(m.id) === String(p.id)) || (m.email && p.email && m.email.toLowerCase() === p.email.toLowerCase()) || (m.name_ar && p.name_ar && m.name_ar === p.name_ar))) {
+              merged.push(p);
+            }
+          });
+          return merged;
         });
         if (tenantsData.data.length > 0 && !selectedTenantForStock) {
           setSelectedTenantForStock(String(tenantsData.data[0].id));
         }
       }
+
+      // مزامنة مستمرة ومباشرة عبر getDocs مع فايربيز لضمان ثبات حسابات الشركات والمشاتل ومنع اختفائها مع F5
+      fetchFirebaseCompanies().then(directCompanies => {
+        if (directCompanies && directCompanies.length > 0) {
+          setTenants(prev => {
+            const merged = [...prev];
+            directCompanies.forEach(fb => {
+              const idx = merged.findIndex(m => (m.id && String(m.id) === String(fb.id)) || (m.email && fb.email && m.email.toLowerCase() === fb.email.toLowerCase()));
+              if (idx === -1) {
+                merged.unshift(fb);
+              } else {
+                merged[idx] = { ...merged[idx], ...fb };
+              }
+            });
+            return merged;
+          });
+        }
+      }).catch(() => {});
+
       if (statsData && statsData.success) setStats(statsData.data);
     } catch (err) {
       console.error('Error fetching superadmin data:', err);
