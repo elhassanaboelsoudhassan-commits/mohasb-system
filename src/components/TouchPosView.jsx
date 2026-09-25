@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { safeFetch, LocalSaaSStorage } from '../api/client';
 import PrintableInvoiceModal from './PrintableInvoiceModal';
 import CashierShiftsModal from './CashierShiftsModal';
+import CashierMySalesModal from './CashierMySalesModal';
 
 export default function TouchPosView({ activeTenant, activeBranch, currentUser, onInvoiceCreated }) {
   const [products, setProducts] = useState([]);
@@ -21,6 +22,7 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
   const [processing, setProcessing] = useState(false);
   const [completedInvoice, setCompletedInvoice] = useState(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [showMySalesModal, setShowMySalesModal] = useState(false);
 
   // صلاحيات الكاشير من الإدارة
   const [cashierPermissions, setCashierPermissions] = useState(() => {
@@ -407,6 +409,14 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
               title="عرض سجل وتقارير الورديات السابقة"
             >
               📜 سجل الورديات
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowMySalesModal(true)}
+              className="px-2.5 py-1.5 rounded-lg font-bold text-xs bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/60 transition-all flex items-center gap-1"
+              title="استعراض مبيعاتي وفواتيري الشخصية بالتواريخ"
+            >
+              <span>📊 مبيعاتي بالتواريخ</span>
             </button>
           </div>
         </div>
@@ -1121,6 +1131,14 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
         currentShift={currentShift}
         currentUser={currentUser}
         activeBranch={activeBranch}
+      />
+
+      {/* نافذة استعراض مبيعات الكاشير الشخصية بالتواريخ */}
+      <CashierMySalesModal
+        isOpen={showMySalesModal}
+        onClose={() => setShowMySalesModal(false)}
+        currentUser={currentUser}
+        currentTenant={activeTenant}
       />
     </div>
   );

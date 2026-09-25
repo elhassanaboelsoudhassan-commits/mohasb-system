@@ -551,6 +551,104 @@ export function subscribeToLiveBranches(callback) {
 }
 
 /**
+ * جلب قائمة الفروع سحابياً ومباشرة عبر getDocs من Firestore
+ */
+export async function fetchFirebaseBranches() {
+  try {
+    const col = collection(db, BRANCHES_COLLECTION);
+    const snap = await getDocs(col);
+    const list = [];
+    snap.forEach(docSnap => {
+      list.push({ id: docSnap.id, ...docSnap.data() });
+    });
+    return list;
+  } catch (error) {
+    console.warn('fetchFirebaseBranches warning:', error);
+    return [];
+  }
+}
+
+/**
+ * تحديث وتعديل بيانات الفرع القائم وموقعه الجغرافي في Firestore
+ */
+export async function updateBranchInFirebase(branchId, branchData) {
+  try {
+    const docRef = doc(db, BRANCHES_COLLECTION, String(branchId));
+    const updatePayload = {
+      ...branchData,
+      updated_at: new Date().toISOString(),
+      firestore_timestamp: serverTimestamp()
+    };
+    await setDoc(docRef, updatePayload, { merge: true });
+    return { success: true };
+  } catch (error) {
+    console.error('Firebase update branch error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * حذف أو إلغاء تفعيل فرع من Firestore
+ */
+export async function deleteBranchFromFirebase(branchId) {
+  try {
+    const docRef = doc(db, BRANCHES_COLLECTION, String(branchId));
+    await deleteDoc(docRef);
+    return { success: true };
+  } catch (error) {
+    console.error('Firebase delete branch error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * تحديث بيانات المنشأة والشركة العامة (الاسم، الرقم الضريبي، الشعار، السجل، الحساب البنكي) في Firestore
+ */
+export async function updateCompanyProfileInFirebase(tenantId, profileData) {
+  try {
+    const payload = {
+      ...profileData,
+      name_ar: profileData.name_ar || profileData.company_name_ar,
+      name_en: profileData.name_en || profileData.company_name_en,
+      vat_number: profileData.vat_number,
+      cr_number: profileData.cr_number,
+      logo_url: profileData.logo_url || null,
+      bank_account: profileData.bank_account || '3165002243921500013',
+      phone: profileData.phone,
+      email: profileData.email,
+      updated_at: new Date().toISOString()
+    };
+
+    // 1. التحديث في users
+    try {
+      const userRef = doc(db, USERS_COLLECTION, String(tenantId));
+      await setDoc(userRef, payload, { merge: true });
+    } catch (e) {
+      console.warn('Notice updating users for profile:', e);
+    }
+
+    // 2. التحديث في tenants
+    try {
+      const tenantRef = doc(db, TENANTS_COLLECTION, String(tenantId));
+      await setDoc(tenantRef, payload, { merge: true });
+    } catch (e) {
+      console.warn('Notice updating tenants for profile:', e);
+    }
+
+    // 3. التحديث في system_settings
+    try {
+      const setRef = doc(db, SETTINGS_COLLECTION, `company_profile_${tenantId}`);
+      await setDoc(setRef, payload, { merge: true });
+    } catch (e) {}
+
+    return { success: true };
+  } catch (error) {
+    console.error('Firebase updateCompanyProfileInFirebase error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * حفظ وإغلاق وردية كاشير مع تقرير الصندوق وجرد الخزينة (Shift)
  */
 export async function saveShiftToFirebase(shiftData) {

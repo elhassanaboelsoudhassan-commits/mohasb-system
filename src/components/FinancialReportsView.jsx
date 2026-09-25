@@ -35,6 +35,8 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
   const [fromDate, setFromDate] = useState(getFirstDayOfMonth);
   const [toDate, setToDate] = useState(getTodayStr);
   const [datePreset, setDatePreset] = useState('this_month');
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState(selectedBranch || 'all');
+  const [selectedCashierFilter, setSelectedCashierFilter] = useState('all');
   const [filterType, setFilterType] = useState('all'); // 'all', 'sales', 'purchases', 'expenses'
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -89,13 +91,14 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
     } else {
       fetchReportData();
     }
-  }, [reportTab, selectedBranch, fromDate, toDate]);
+  }, [reportTab, selectedBranchFilter, selectedCashierFilter, fromDate, toDate]);
 
   const fetchSalesPurchasesReport = async () => {
     setLoading(true);
     try {
-      const branchParam = selectedBranch !== 'all' ? `&branchId=${selectedBranch}` : '';
-      const res = await safeFetch(`/api/reports/sales-purchases?fromDate=${fromDate}&toDate=${toDate}${branchParam}`);
+      const branchParam = selectedBranchFilter !== 'all' ? `&branchId=${selectedBranchFilter}` : '';
+      const cashierParam = selectedCashierFilter !== 'all' ? `&cashierId=${encodeURIComponent(selectedCashierFilter)}` : '';
+      const res = await safeFetch(`/api/reports/sales-purchases?fromDate=${fromDate}&toDate=${toDate}${branchParam}${cashierParam}`);
       if (res && res.success && res.data) {
         setSalesPurchasesData(res.data);
       }
@@ -166,6 +169,8 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
           category_type: 'sales',
           party: s.customer_name || 'عميل نقدي عام',
           payment_method: s.payment_method === 'credit' ? 'آجل' : s.payment_method === 'card' ? 'شبكة / مدى' : 'نقداً',
+          branch_name: s.branch_name || (branches.find(b => b.id == s.branch_id)?.name_ar) || 'الفرع الرئيسي',
+          cashier_name: s.cashier_name || s.created_by_name || 'كاشير الفرع',
           subtotal: Number(s.subtotal) || 0,
           vat: Number(s.vat_total || s.vat_amount) || 0,
           grand: Number(s.grand_total || s.total_amount) || 0,
@@ -183,6 +188,8 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
           category_type: 'purchases',
           party: p.supplier_name || 'مورد زراعي',
           payment_method: p.payment_status || 'سداد معتمد',
+          branch_name: p.branch_name || 'المستودع الرئيسي',
+          cashier_name: p.created_by_name || 'مدير المشتريات',
           subtotal: Number(p.subtotal) || 0,
           vat: Number(p.vat_total || p.vat_amount) || 0,
           grand: Number(p.grand_total) || 0,
@@ -200,6 +207,8 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
           category_type: 'expenses',
           party: e.category || 'مصروفات عامة',
           payment_method: e.payment_method || 'نقداً',
+          branch_name: e.branch_name || 'الإدارة العامة',
+          cashier_name: e.created_by_name || 'المحاسب',
           subtotal: Number(e.amount) || 0,
           vat: Number(e.vat_amount) || 0,
           grand: (Number(e.amount) || 0) + (Number(e.vat_amount) || 0),
@@ -353,7 +362,7 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', alignItems: 'flex-end', background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem', alignItems: 'flex-end', background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
                       📅 من تاريخ (تاريخ البداية):
@@ -361,7 +370,7 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
                     <input
                       type="date"
                       className="form-input"
-                      style={{ width: '100%', fontSize: '0.9rem', padding: '0.5rem' }}
+                      style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem' }}
                       value={fromDate}
                       onChange={e => {
                         setFromDate(e.target.value);
@@ -377,13 +386,47 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
                     <input
                       type="date"
                       className="form-input"
-                      style={{ width: '100%', fontSize: '0.9rem', padding: '0.5rem' }}
+                      style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem' }}
                       value={toDate}
                       onChange={e => {
                         setToDate(e.target.value);
                         setDatePreset('custom');
                       }}
                     />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
+                      🏢 تصفية حسب الفرع:
+                    </label>
+                    <select
+                      className="form-select"
+                      style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem' }}
+                      value={selectedBranchFilter}
+                      onChange={e => setSelectedBranchFilter(e.target.value)}
+                    >
+                      <option value="all">كافة فروع المنشأة</option>
+                      {(salesPurchasesData?.branches || branches || []).map(b => (
+                        <option key={b.id} value={b.id}>{b.name_ar || b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '0.35rem' }}>
+                      👤 تصفية حسب الكاشير:
+                    </label>
+                    <select
+                      className="form-select"
+                      style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem' }}
+                      value={selectedCashierFilter}
+                      onChange={e => setSelectedCashierFilter(e.target.value)}
+                    >
+                      <option value="all">كافة الكاشيرات والمستخدمين</option>
+                      {(salesPurchasesData?.cashiers || []).map(c => (
+                        <option key={c.id || c.name} value={c.id || c.name}>{c.name || c.username}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -520,6 +563,7 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
                         <th style={{ padding: '0.65rem' }}>رقم المستند</th>
                         <th style={{ padding: '0.65rem' }}>التاريخ</th>
                         <th style={{ padding: '0.65rem' }}>نوع الحركة</th>
+                        <th style={{ padding: '0.65rem' }}>الفرع / الكاشير</th>
                         <th style={{ padding: '0.65rem' }}>الطرف المعني / الحساب</th>
                         <th style={{ padding: '0.65rem' }}>طريقة الدفع</th>
                         <th style={{ padding: '0.65rem' }}>المبلغ بدون ضريبة</th>
@@ -531,7 +575,7 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
                     <tbody>
                       {filteredTransactions.length === 0 ? (
                         <tr>
-                          <td colSpan="9" style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>
+                          <td colSpan="10" style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>
                             لا توجد حركات أو فواتير مسجلة في هذه الفترة المحددة
                           </td>
                         </tr>
@@ -554,6 +598,16 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
                                 {t.type}
                               </span>
                             </td>
+                            <td style={{ padding: '0.65rem' }}>
+                              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#1e293b' }}>
+                                {t.branch_name || 'الفرع الرئيسي'}
+                              </div>
+                              {t.cashier_name && (
+                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                  👤 {t.cashier_name}
+                                </div>
+                              )}
+                            </td>
                             <td style={{ padding: '0.65rem', fontWeight: 600 }}>{t.party}</td>
                             <td style={{ padding: '0.65rem', fontSize: '0.85rem' }}>{t.payment_method}</td>
                             <td className="font-mono" style={{ padding: '0.65rem', fontWeight: 700 }}>
@@ -575,7 +629,7 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
                     {filteredTransactions.length > 0 && (
                       <tfoot>
                         <tr style={{ background: '#f8fafc', fontWeight: 900, borderTop: '2px solid #cbd5e1' }}>
-                          <td colSpan="5" style={{ padding: '0.75rem' }}>
+                          <td colSpan="6" style={{ padding: '0.75rem' }}>
                             صافي إجمالي الحركات المحددة:
                           </td>
                           <td className="font-mono" style={{ padding: '0.75rem', color: sumSubtotal >= 0 ? '#047857' : '#be123c' }}>

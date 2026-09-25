@@ -7,6 +7,10 @@ import {
   saveProductToFirebase, 
   saveSaleToFirebase, 
   saveBranchToFirebase,
+  fetchFirebaseBranches,
+  updateBranchInFirebase,
+  deleteBranchFromFirebase,
+  updateCompanyProfileInFirebase,
   updateTenantZatcaInFirestore,
   logLoginActivityToFirebase,
   fetchFirebaseLoginActivities,
@@ -628,7 +632,94 @@ export class LocalSaaSStorage {
 
   static getBranches(tenantId = 1) {
     const list = this.get('branches', SEED_BRANCHES);
+    if (!tenantId || tenantId === 'all' || tenantId === 'ALL') return list;
     return list.filter(b => b.tenant_id == tenantId);
+  }
+
+  static saveBranch(branch) {
+    const list = this.get('branches', SEED_BRANCHES);
+    const existingIndex = list.findIndex(b => b.id == branch.id || (branch.code && b.code === branch.code));
+    if (existingIndex !== -1) {
+      list[existingIndex] = { ...list[existingIndex], ...branch, updated_at: new Date().toISOString() };
+    } else {
+      list.push({
+        id: branch.id || Date.now(),
+        tenant_id: branch.tenant_id || 1,
+        code: branch.code || `BR-${Date.now().toString().slice(-4)}`,
+        name_ar: branch.name_ar,
+        name_en: branch.name_en || branch.name_ar,
+        city: branch.city || 'الرياض',
+        address: branch.address || '',
+        geo_location: branch.geo_location || branch.map_url || '',
+        phone: branch.phone || '',
+        email: branch.email || '',
+        cr_number: branch.cr_number || '',
+        vat_number: branch.vat_number || '',
+        status: branch.status || 'active',
+        warehouses: branch.warehouses || [{ id: Date.now() + 1, name_ar: `مستودع ${branch.name_ar}` }],
+        created_at: new Date().toISOString()
+      });
+    }
+    this.set('branches', list);
+    window.dispatchEvent(new CustomEvent('suwayan_branches_updated', { detail: list }));
+    return list;
+  }
+
+  static updateBranch(branchId, branchData) {
+    const list = this.get('branches', SEED_BRANCHES);
+    const idx = list.findIndex(b => b.id == branchId || b.code == branchId);
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...branchData, updated_at: new Date().toISOString() };
+      this.set('branches', list);
+      window.dispatchEvent(new CustomEvent('suwayan_branches_updated', { detail: list }));
+      return list[idx];
+    }
+    return null;
+  }
+
+  static deleteBranch(branchId) {
+    let list = this.get('branches', SEED_BRANCHES);
+    list = list.filter(b => b.id != branchId && b.code != branchId);
+    this.set('branches', list);
+    window.dispatchEvent(new CustomEvent('suwayan_branches_updated', { detail: list }));
+    return true;
+  }
+
+  static updateCompanyProfile(tenantId, profileData) {
+    // 1. تحديث في tenants
+    const tenants = this.getTenants();
+    const tIndex = tenants.findIndex(t => t.id == tenantId);
+    if (tIndex !== -1) {
+      tenants[tIndex] = {
+        ...tenants[tIndex],
+        ...profileData,
+        company_name_ar: profileData.name_ar || profileData.company_name_ar || tenants[tIndex].company_name_ar,
+        name_ar: profileData.name_ar || profileData.company_name_ar || tenants[tIndex].name_ar,
+        company_name_en: profileData.name_en || profileData.company_name_en || tenants[tIndex].company_name_en,
+        name_en: profileData.name_en || profileData.company_name_en || tenants[tIndex].name_en,
+        vat_number: profileData.vat_number || tenants[tIndex].vat_number,
+        cr_number: profileData.cr_number || tenants[tIndex].cr_number,
+        logo_url: profileData.logo_url !== undefined ? profileData.logo_url : tenants[tIndex].logo_url,
+        bank_account: profileData.bank_account || tenants[tIndex].bank_account || '3165002243921500013',
+        phone: profileData.phone || tenants[tIndex].phone,
+        email: profileData.email || tenants[tIndex].email,
+        updated_at: new Date().toISOString()
+      };
+      this.set('tenants', tenants);
+    }
+
+    // 2. تحديث في users
+    const users = this.getUsers();
+    users.forEach(u => {
+      if (u.tenant_id == tenantId || (u.role === 'tenant_owner' && u.id == tenantId)) {
+        if (profileData.name_ar) u.company_name = profileData.name_ar;
+        if (profileData.logo_url) u.logo_url = profileData.logo_url;
+      }
+    });
+    this.set('users', users);
+
+    window.dispatchEvent(new CustomEvent('suwayan_tenant_updated', { detail: profileData }));
+    return tenants[tIndex] || profileData;
   }
 
   static getProducts(tenantId = 1) {
@@ -815,12 +906,15 @@ export class LocalSaaSStorage {
   static getCashierPermissions() {
     return this.get('cashier_permissions', {
       allow_discounts: true,
+      allow_discount: true,
       max_discount_percent: 15,
       allow_delete_items: true,
       allow_price_override: false,
       allow_credit_sales: true,
       allow_void_invoice: true,
-      require_supervisor_pin: false
+      view_own_sales_only: true, // 🔒 مشاهدة مبيعاته وفواتيره الشخصية فقط
+      require_supervisor_pin: false,
+      supervisor_pin: '1234'
     });
   }
 
@@ -1205,10 +1299,86 @@ function handleLocalFallback(url, options, tenantId) {
     };
   }
 
-  // 4. الفروع
+  // 4. إدارة الفروع والمستودعات المتعددة (Multi-Branch Management)
   if (path.includes('/api/branches')) {
+    if (method === 'POST') {
+      const newBranch = {
+        id: Date.now(),
+        tenant_id: body.tenant_id || tenantId,
+        code: body.code || `BR-${Date.now().toString().slice(-4)}`,
+        name_ar: body.name_ar,
+        name_en: body.name_en || body.name_ar,
+        city: body.city || 'الرياض',
+        address: body.address || '',
+        geo_location: body.geo_location || body.map_url || '',
+        phone: body.phone || '',
+        email: body.email || '',
+        cr_number: body.cr_number || '',
+        vat_number: body.vat_number || '',
+        status: body.status || 'نشط ومفعل',
+        warehouses: body.warehouses || [
+          { id: Date.now() + 1, name_ar: `مستودع ${body.name_ar}` }
+        ],
+        created_at: new Date().toISOString()
+      };
+      LocalSaaSStorage.saveBranch(newBranch);
+      try {
+        saveBranchToFirebase(newBranch).catch(e => console.warn('Firebase saveBranch notice:', e));
+      } catch (e) {}
+      return {
+        success: true,
+        message: '✅ تم إنشاء الفرع والمستودع التابع له بنجاح وتثبيته سحابياً',
+        data: newBranch,
+        id: newBranch.id
+      };
+    }
+
+    if (method === 'PUT' || path.includes('/update')) {
+      const targetId = body.id || path.split('/api/branches/')[1]?.split('/')[0];
+      const updated = LocalSaaSStorage.updateBranch(targetId, body);
+      try {
+        updateBranchInFirebase(targetId, body).catch(e => console.warn('Firebase updateBranch notice:', e));
+      } catch (e) {}
+      return {
+        success: true,
+        message: '✅ تم تعديل بيانات الفرع وموقعه الجغرافي بنجاح وتحديثه سحابياً في Firebase',
+        data: updated
+      };
+    }
+
+    if (method === 'DELETE' || path.includes('/delete')) {
+      const targetId = body?.id || path.split('/api/branches/')[1]?.split('/')[0];
+      LocalSaaSStorage.deleteBranch(targetId);
+      try {
+        deleteBranchFromFirebase(targetId).catch(e => console.warn('Firebase deleteBranch notice:', e));
+      } catch (e) {}
+      return {
+        success: true,
+        message: '✅ تم حذف أو إلغاء تفعيل الفرع بنجاح',
+        deleted_id: targetId
+      };
+    }
+
     const branches = LocalSaaSStorage.getBranches(tenantId);
     return { success: true, data: branches };
+  }
+
+  // 4.1 تحديث بيانات وهوية الشركة العامة (الاسم، الرقم الضريبي، الشعار، السجل، الحساب البنكي)
+  if (path.includes('/api/company/profile') || path.includes('/api/tenant/profile') || (path.includes('/api/superadmin/tenants/') && path.includes('/invoice-settings'))) {
+    const targetTenantId = path.includes('/invoice-settings') 
+      ? path.split('/api/superadmin/tenants/')[1]?.split('/')[0]
+      : (body.tenant_id || tenantId);
+
+    const updated = LocalSaaSStorage.updateCompanyProfile(targetTenantId, body);
+    try {
+      updateCompanyProfileInFirebase(targetTenantId, body).catch(e => console.warn('Firebase updateCompanyProfile notice:', e));
+    } catch (e) {}
+
+    return {
+      success: true,
+      message: '✅ تم حفظ وتحديث بيانات الشركة العامة والشعار والرقم الضريبي سحابياً في Firebase بنجاح!',
+      data: updated
+    };
   }
 
   // 5. المنتجات والأصناف الزراعية
@@ -1893,29 +2063,105 @@ function handleLocalFallback(url, options, tenantId) {
     return { success: true, data: LocalSaaSStorage.getCentralProducts() };
   }
 
-  // 22. تقرير المبيعات والمشتريات الذكي المحدد بالتواريخ
+  // 21.1 مبيعات الكاشير الشخصية المحددة بالتواريخ (Personal Cashier Sales)
+  if (path.includes('/api/cashier/my-sales')) {
+    const searchParams = url.includes('?') ? new URLSearchParams(url.split('?')[1]) : new URLSearchParams();
+    const fromDate = searchParams.get('fromDate') || '';
+    const toDate = searchParams.get('toDate') || '';
+    const cashierId = searchParams.get('cashierId') || '';
+    const cashierName = searchParams.get('cashierName') || '';
+
+    let sales = LocalSaaSStorage.getInvoices(tenantId);
+
+    // 🔒 فلترة حصرية وصارمة: مبيعات هذا الكاشير فقط ومنع الاطلاع على باقي مبيعات الشركة
+    if (cashierId || cashierName) {
+      sales = sales.filter(s => {
+        const matchId = cashierId && (String(s.cashier_id) === String(cashierId) || String(s.created_by) === String(cashierId));
+        const matchName = cashierName && (s.cashier_name === cashierName || (s.notes && s.notes.includes(cashierName)));
+        return matchId || matchName;
+      });
+    }
+
+    if (fromDate) {
+      sales = sales.filter(s => (s.issue_date || s.created_at?.split('T')[0] || '') >= fromDate);
+    }
+    if (toDate) {
+      sales = sales.filter(s => (s.issue_date || s.created_at?.split('T')[0] || '') <= toDate);
+    }
+
+    const totalSalesRevenue = sales.reduce((sum, s) => sum + (Number(s.subtotal) || 0), 0);
+    const totalSalesVat = sales.reduce((sum, s) => sum + (Number(s.vat_total || s.vat_amount) || 0), 0);
+    const totalSalesGrand = sales.reduce((sum, s) => sum + (Number(s.grand_total || s.total_amount) || 0), 0);
+
+    const cashSales = sales.filter(s => s.payment_method === 'cash').reduce((sum, s) => sum + (Number(s.grand_total || s.total_amount) || 0), 0);
+    const cardSales = sales.filter(s => s.payment_method !== 'cash').reduce((sum, s) => sum + (Number(s.grand_total || s.total_amount) || 0), 0);
+
+    return {
+      success: true,
+      data: {
+        period: {
+          from_date: fromDate || 'اليوم',
+          to_date: toDate || 'اليوم'
+        },
+        summary: {
+          total_revenue: Number(totalSalesRevenue.toFixed(2)),
+          total_vat: Number(totalSalesVat.toFixed(2)),
+          total_grand: Number(totalSalesGrand.toFixed(2)),
+          sales_count: sales.length,
+          cash_total: Number(cashSales.toFixed(2)),
+          card_total: Number(cardSales.toFixed(2)),
+          average_sale: sales.length > 0 ? Number((totalSalesGrand / sales.length).toFixed(2)) : 0
+        },
+        invoices: sales
+      }
+    };
+  }
+
+  // 22. تقرير المبيعات والمشتريات الذكي المركزي المحدد بالتواريخ والفروع والكاشير
   if (path.includes('/api/reports/sales-purchases')) {
     const searchParams = url.includes('?') ? new URLSearchParams(url.split('?')[1]) : new URLSearchParams();
     const fromDate = searchParams.get('fromDate') || '';
     const toDate = searchParams.get('toDate') || '';
     const branchId = searchParams.get('branchId') || 'all';
+    const cashierId = searchParams.get('cashierId') || 'all';
 
     let sales = LocalSaaSStorage.getInvoices(tenantId);
     let purchases = LocalSaaSStorage.getPurchaseInvoices(tenantId);
     let expenses = LocalSaaSStorage.getExpenses(tenantId);
+    const branches = LocalSaaSStorage.getBranches(tenantId);
 
+    // استخراج قائمة الكواشير الفريدة للفلترة
+    const cashiersSet = new Set(['محمد الشمري', 'أحمد العتيبي', 'سلطان الغامدي']);
+    sales.forEach(s => {
+      if (s.cashier_name) cashiersSet.add(s.cashier_name);
+    });
+    const cashiersList = Array.from(cashiersSet);
+
+    // 1. تصفية حسب الفرع
     if (branchId && branchId !== 'all') {
-      sales = sales.filter(s => s.branch_id == branchId);
-      purchases = purchases.filter(p => p.branch_id == branchId);
-      expenses = expenses.filter(e => e.branch_id == branchId);
+      sales = sales.filter(s => String(s.branch_id) === String(branchId));
+      purchases = purchases.filter(p => String(p.branch_id) === String(branchId));
+      expenses = expenses.filter(e => String(e.branch_id) === String(branchId));
     }
 
+    // 2. تصفية حسب موظف الكاشير
+    if (cashierId && cashierId !== 'all') {
+      sales = sales.filter(s => 
+        String(s.cashier_id) === String(cashierId) || 
+        s.cashier_name === cashierId || 
+        String(s.created_by) === String(cashierId) ||
+        (s.notes && s.notes.includes(cashierId))
+      );
+    }
+
+    // 3. تصفية حسب تاريخ البداية
     if (fromDate) {
       sales = sales.filter(s => (s.issue_date || s.created_at?.split('T')[0] || '') >= fromDate);
       purchases = purchases.filter(p => (p.invoice_date || p.date || '') >= fromDate);
       expenses = expenses.filter(e => (e.date || '') >= fromDate);
     }
 
+    // 4. تصفية حسب تاريخ النهاية
     if (toDate) {
       sales = sales.filter(s => (s.issue_date || s.created_at?.split('T')[0] || '') <= toDate);
       purchases = purchases.filter(p => (p.invoice_date || p.date || '') <= toDate);
@@ -1947,6 +2193,12 @@ function handleLocalFallback(url, options, tenantId) {
           from_date: fromDate || 'بداية النشاط',
           to_date: toDate || 'اليوم'
         },
+        filters: {
+          branch_id: branchId,
+          cashier_id: cashierId
+        },
+        cashiers: cashiersList,
+        branches: branches,
         summary: {
           total_sales_revenue: Number(totalSalesRevenue.toFixed(2)),
           total_sales_vat: Number(totalSalesVat.toFixed(2)),

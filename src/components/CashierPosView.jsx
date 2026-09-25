@@ -21,12 +21,13 @@ import {
 } from 'lucide-react';
 import { safeFetch, LocalSaaSStorage } from '../api/client';
 import PrintableInvoiceModal from './PrintableInvoiceModal';
+import CashierMySalesModal from './CashierMySalesModal';
 
 export default function CashierPosView({ 
   products = [], 
   branches = [], 
   currentUser, 
-  currentTenant,
+  currentTenant, 
   contacts = [], 
   onSaleSuccess,
   onSaleCompleted
@@ -40,6 +41,7 @@ export default function CashierPosView({
   const [discountPercent, setDiscountPercent] = useState(0);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [lastInvoice, setLastInvoice] = useState(null);
+  const [showMySalesModal, setShowMySalesModal] = useState(false);
 
   // Cashier Permissions State
   const [cashierPermissions, setCashierPermissions] = useState(() => {
@@ -257,6 +259,30 @@ export default function CashierPosView({
               📦 بيع جملة ومقاولات (Wholesale)
             </button>
           </div>
+
+          {/* Cashier Personal Sales Button */}
+          <button
+            type="button"
+            onClick={() => setShowMySalesModal(true)}
+            className="btn btn-secondary"
+            style={{
+              padding: '0.45rem 0.9rem',
+              borderRadius: '8px',
+              border: '1px solid #bfdbfe',
+              background: '#eff6ff',
+              color: '#1d4ed8',
+              fontWeight: 800,
+              fontSize: '0.825rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem'
+            }}
+            title="استعراض مبيعاتي وفواتيري الشخصية بالتواريخ"
+          >
+            <Receipt size={15} />
+            <span>📊 مبيعاتي الشخصية</span>
+          </button>
 
           {/* Search bar */}
           <div style={{ position: 'relative', width: '280px' }}>
@@ -594,6 +620,13 @@ export default function CashierPosView({
           onClose={() => setLastInvoice(null)}
         />
       )}
+      {/* Modal: Cashier Personal Sales History with Date Filters */}
+      <CashierMySalesModal
+        isOpen={showMySalesModal}
+        onClose={() => setShowMySalesModal(false)}
+        currentUser={currentUser}
+        currentTenant={currentTenant}
+      />
     </div>
   );
 }

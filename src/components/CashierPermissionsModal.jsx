@@ -31,6 +31,7 @@ export default function CashierPermissionsModal({ onClose, onSuccess }) {
     allow_credit_sales: false,
     allow_reprint_invoice: true,
     allow_shift_close: true,
+    view_own_sales_only: true,
     supervisor_pin: '1234'
   });
 
@@ -334,6 +335,35 @@ export default function CashierPermissionsModal({ onClose, onSuccess }) {
                   type="checkbox"
                   checked={permissions.allow_credit_sales}
                   onChange={e => setPermissions({ ...permissions, allow_credit_sales: e.target.checked })}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#047857' }}
+                />
+              </div>
+
+              {/* Option: View Own Sales Only */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.85rem 1rem',
+                borderRadius: '10px',
+                background: permissions.view_own_sales_only ? '#ecfdf5' : '#f8fafc',
+                border: '1px solid ' + (permissions.view_own_sales_only ? '#a7f3d0' : '#e2e8f0')
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <UserCheck size={18} style={{ color: '#047857' }} />
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.9rem' }}>
+                      مشاهدة مبيعاته الشخصية فقط
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                      تمكين الكاشير من استعراض مبيعاته وفواتيره الشخصية بالتواريخ فقط، وتقييد وصوله لمبيعات الفروع أو الزملاء
+                    </div>
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={permissions.view_own_sales_only !== false}
+                  onChange={e => setPermissions({ ...permissions, view_own_sales_only: e.target.checked })}
                   style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#047857' }}
                 />
               </div>
