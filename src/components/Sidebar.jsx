@@ -11,6 +11,7 @@ import {
   ShoppingBag,
   ClipboardCheck,
   ShieldAlert,
+  ShieldCheck,
   LogOut,
   Building,
   UserCheck,
@@ -67,6 +68,23 @@ export default function Sidebar({
       label: 'إدارة المنظومة (Super Admin)',
       icon: ShieldAlert,
       badge: 'مطلق',
+      showForCashier: false
+    });
+  }
+
+  // 🛡️ لوحة تحكم الكاشير المحمية برتبة المسؤول السوبر فقط (Admin-Only Privilege)
+  const isAdmin = currentUser?.role === 'admin' || 
+                  currentUser?.role === 'super_admin' || 
+                  isSuperAdmin ||
+                  currentUser?.email === 'elhassanelsoudy@gmail.com';
+
+  if (isAdmin) {
+    const insertPos = isSuperAdmin ? 4 : 3;
+    menuItems.splice(insertPos, 0, {
+      id: 'cashier_control',
+      label: '🛡️ لوحة تحكم الكاشير',
+      icon: ShieldCheck,
+      badge: 'Admin فقط',
       showForCashier: false
     });
   }

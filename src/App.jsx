@@ -30,6 +30,7 @@ import DeliveryOrdersModal from './components/DeliveryOrdersModal';
 import CashierPermissionsModal from './components/CashierPermissionsModal';
 import PaymentGatewaysView from './components/PaymentGatewaysView';
 import SmartMobileInventoryAudit from './components/SmartMobileInventoryAudit';
+import CashierControlPanel from './components/CashierControlPanel';
 import AiAssistantWidget from './components/AiAssistantWidget';
 import { CheckCircle2, X } from 'lucide-react';
 import { t } from './i18n';
@@ -400,6 +401,16 @@ export default function App() {
               contacts={contacts}
               onSaleCompleted={refreshAll}
               onSaleSuccess={refreshAll}
+            />
+          )}
+
+          {/* Protected Cashier Control Panel (Admin Only Privilege) */}
+          {activeTab === 'cashier_control' && (
+            <CashierControlPanel 
+              currentUser={currentUser}
+              currentTenant={currentTenant}
+              branches={branches}
+              onClose={() => setActiveTab('dashboard')}
             />
           )}
 

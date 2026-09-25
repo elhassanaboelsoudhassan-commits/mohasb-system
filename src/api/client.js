@@ -1041,18 +1041,147 @@ function handleLocalFallback(url, options, tenantId) {
     };
   }
 
-  // 1.1 تسجيل الدخول السريع عبر Google SSO
+  // 1.1 تسجيل الدخول وإنشاء حساب مشترك جديد عبر Google SSO
   if (path.includes('/api/auth/google-login')) {
-    const users = LocalSaaSStorage.getUsers();
-    const user = users.find(u => u.email === (body.email || 'owner@al-suwayan.sa')) || users[1];
-    const tenants = LocalSaaSStorage.getTenants();
-    const tenant = tenants[0];
-    LocalSaaSStorage.logActivity(user, tenant.company_name_ar);
+    const trialEndDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const customerUser = {
+      id: 'cust_google_' + Date.now(),
+      name: body.google_name || 'مشترك Google',
+      name_ar: body.google_name || 'مشترك Google',
+      email: body.google_email || 'google.user@gmail.com',
+      // ⚡ توحيد الرتبة كـ عميل/مشترك حصراً وتفعيل الفترة التجريبية
+      role: 'customer',
+      user_type: 'customer',
+      is_customer: true,
+      trialPeriod: true,
+      is_trial: true,
+      trial_status: 'active',
+      trial_ends_at: trialEndDate,
+      trial_days_remaining: 14,
+      status: 'نشط ومفعل',
+      auth_provider: 'google'
+    };
+    LocalSaaSStorage.logActivity(customerUser, 'بوابة العملاء والمشتركين (Google SSO)');
     return {
       success: true,
-      user,
-      tenant,
-      isSuperAdmin: user.role === 'super_admin'
+      user: customerUser,
+      tenant: {
+        id: 'tenant_trial_' + Date.now(),
+        name_ar: body.company_name_ar || 'حساب مشترك تجريبي',
+        company_name_ar: body.company_name_ar || 'حساب مشترك تجريبي',
+        status: 'trial',
+        trial_ends_at: trialEndDate,
+        trialPeriod: true
+      },
+      isSuperAdmin: false
+    };
+  }
+
+  // 1.1.1 تسجيل الدخول وإنشاء حساب عبر Facebook
+  if (path.includes('/api/auth/facebook-login')) {
+    const trialEndDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const customerUser = {
+      id: 'cust_fb_' + Date.now(),
+      name: body.facebook_name || 'مشترك فيسبوك',
+      name_ar: body.facebook_name || 'مشترك فيسبوك',
+      email: body.facebook_email || 'facebook.user@fb.com',
+      role: 'customer',
+      user_type: 'customer',
+      is_customer: true,
+      trialPeriod: true,
+      is_trial: true,
+      trial_status: 'active',
+      trial_ends_at: trialEndDate,
+      trial_days_remaining: 14,
+      status: 'نشط ومفعل',
+      auth_provider: 'facebook'
+    };
+    LocalSaaSStorage.logActivity(customerUser, 'بوابة العملاء والمشتركين (Facebook Login)');
+    return {
+      success: true,
+      user: customerUser,
+      tenant: {
+        id: 'tenant_trial_' + Date.now(),
+        name_ar: 'حساب مشترك تجريبي',
+        company_name_ar: 'حساب مشترك تجريبي',
+        status: 'trial',
+        trial_ends_at: trialEndDate,
+        trialPeriod: true
+      },
+      isSuperAdmin: false
+    };
+  }
+
+  // 1.1.2 تسجيل الدخول وإنشاء حساب عبر رقم الهاتف
+  if (path.includes('/api/auth/phone-login')) {
+    const trialEndDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const cleanPhone = (body.phone || '05xxxxxxxx').trim();
+    const customerUser = {
+      id: 'cust_phone_' + Date.now(),
+      name: `مشترك هاتف (${cleanPhone})`,
+      name_ar: `مشترك هاتف (${cleanPhone})`,
+      phone: cleanPhone,
+      email: `${cleanPhone}@mohasb.sa`,
+      role: 'customer',
+      user_type: 'customer',
+      is_customer: true,
+      trialPeriod: true,
+      is_trial: true,
+      trial_status: 'active',
+      trial_ends_at: trialEndDate,
+      trial_days_remaining: 14,
+      status: 'نشط ومفعل',
+      auth_provider: 'phone'
+    };
+    LocalSaaSStorage.logActivity(customerUser, 'بوابة العملاء والمشتركين (Phone Login)');
+    return {
+      success: true,
+      user: customerUser,
+      tenant: {
+        id: 'tenant_trial_' + Date.now(),
+        name_ar: 'حساب مشترك تجريبي',
+        company_name_ar: 'حساب مشترك تجريبي',
+        status: 'trial',
+        trial_ends_at: trialEndDate,
+        trialPeriod: true
+      },
+      isSuperAdmin: false
+    };
+  }
+
+  // 1.1.3 تسجيل مشترك جديد (Register)
+  if (path.includes('/api/auth/register-tenant')) {
+    const trialEndDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const customerUser = {
+      id: 'cust_' + Date.now(),
+      name: body.owner_name || 'مشترك جديد',
+      name_ar: body.owner_name || 'مشترك جديد',
+      email: body.email,
+      phone: body.phone || '',
+      role: 'customer',
+      user_type: 'customer',
+      is_customer: true,
+      trialPeriod: true,
+      is_trial: true,
+      trial_status: 'active',
+      trial_ends_at: trialEndDate,
+      trial_days_remaining: 14,
+      status: 'نشط ومفعل'
+    };
+    const newTenant = {
+      id: 'tenant_' + Date.now(),
+      name_ar: body.company_name_ar || 'حساب مشترك تجريبي',
+      company_name_ar: body.company_name_ar || 'حساب مشترك تجريبي',
+      city: body.city || 'الرياض',
+      status: 'trial',
+      trial_ends_at: trialEndDate,
+      trialPeriod: true
+    };
+    return {
+      success: true,
+      user: customerUser,
+      tenant: newTenant,
+      isSuperAdmin: false
     };
   }
 
@@ -1686,13 +1815,34 @@ function handleLocalFallback(url, options, tenantId) {
 
   // 9. الدخول السريع عبر Google (Google 1-Click SSO)
   if (path.includes('/api/auth/google-login')) {
-    const users = LocalSaaSStorage.getUsers();
-    const tenant = LocalSaaSStorage.getTenants()[0];
-    const user = users[1] || users[0];
+    const trialEndDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const user = {
+      id: 'cust_google_' + Date.now(),
+      name: body.google_name || 'مشترك Google',
+      name_ar: body.google_name || 'مشترك Google',
+      email: body.google_email || 'google.user@gmail.com',
+      role: 'customer',
+      user_type: 'customer',
+      is_customer: true,
+      trialPeriod: true,
+      is_trial: true,
+      trial_status: 'active',
+      trial_ends_at: trialEndDate,
+      trial_days_remaining: 14,
+      status: 'نشط ومفعل',
+      auth_provider: 'google'
+    };
     return {
       success: true,
       user,
-      tenant,
+      tenant: {
+        id: 'tenant_trial_' + Date.now(),
+        name_ar: 'حساب مشترك تجريبي',
+        company_name_ar: 'حساب مشترك تجريبي',
+        status: 'trial',
+        trial_ends_at: trialEndDate,
+        trialPeriod: true
+      },
       isSuperAdmin: false
     };
   }

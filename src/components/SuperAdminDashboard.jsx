@@ -38,6 +38,7 @@ import {
   fetchFirebaseLoginActivities,
   subscribeToLiveLoginActivities
 } from '../firebase';
+import CashierControlPanel from './CashierControlPanel';
 
 export default function SuperAdminDashboard({ onImpersonateTenant }) {
   const [activeTab, setActiveTab] = useState('tenants'); // 'tenants', 'logins', 'central_catalog', 'products', 'inventory'
@@ -758,6 +759,7 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
         {[
           { id: 'tenants', label: '🏢 إدارة الشركات والمشتركين', count: tenants.length },
           { id: 'logins', label: '🔴 سجل الدخول اللحظي (Live Logins)', count: logins.length },
+          { id: 'cashier_control', label: '🛡️ لوحة تحكم الكاشير ونقاط البيع', badge: 'Admin فقط' },
           { id: 'central_catalog', label: '🌐 إدارة الأصناف المركزية', count: centralProducts.length, badge: 'سحابي عام' },
           { id: 'products', label: '🌱 إضافة وإعداد الأصناف بالمنظومة', badge: 'جديد' },
           { id: 'inventory', label: '⚖️ تعديل كميات المخزون والجرد', badge: 'تحكم' }
@@ -807,6 +809,19 @@ export default function SuperAdminDashboard({ onImpersonateTenant }) {
           </button>
         ))}
       </div>
+
+      {/* TAB: Cashier Control Panel (Admin Only Privilege) */}
+      {activeTab === 'cashier_control' && (
+        <CashierControlPanel 
+          currentUser={{ role: 'admin', email: 'elhassanelsoudy@gmail.com' }}
+          currentTenant={tenants[0] || { id: 1, name_ar: 'المنظومة السحابية' }}
+          branches={[
+            { id: 1, name_ar: 'الفرع الرئيسي - الرياض', location: 'طريق الملك فهد' },
+            { id: 2, name_ar: 'فرع مكة المكرمة', location: 'العزيزية' }
+          ]}
+          onClose={() => setActiveTab('tenants')}
+        />
+      )}
 
       {/* TAB 1: Tenants & Subscriptions Management */}
       {activeTab === 'tenants' && (

@@ -15,15 +15,19 @@ import {
   Sparkles,
   Building2,
   Calendar,
-  Layers
+  Layers,
+  Smartphone,
+  PhoneCall
 } from 'lucide-react';
 import { translations } from '../i18n';
 import { safeFetch } from '../api/client';
-import { saveCompanyToFirebase } from '../firebase';
+import { saveCompanyToFirebase, saveAuthUserToFirebase } from '../firebase';
 
 export default function LandingPage({ onLoginSuccess, lang, setLang }) {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneInput, setPhoneInput] = useState('');
 
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -77,7 +81,7 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
     setRegLoading(true);
     setRegError('');
     try {
-      // 1. حفظ فوري في قاعدة بيانات فايربيز Firestore (مجموعة users ومجموعة tenants)
+      // 1. حفظ فوري في قاعدة بيانات فايربيز Firestore موحداً كـ "عميل/مشترك" (role: "customer") مع تفعيل "فترة تجريبية" (trialPeriod: true)
       try {
         await saveCompanyToFirebase({
           company_name_ar: regForm.company_name_ar,
@@ -89,7 +93,8 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
           cr_number: regForm.cr_number,
           vat_number: regForm.vat_number,
           city: regForm.city,
-          role: 'company_admin',
+          role: 'customer', // ⚡ توحيد الرتبة كـ عميل/مشترك
+          trialPeriod: true, // ⚡ تفعيل الفترة التجريبية تلقائياً
           status: 'نشط ومفعل'
         });
       } catch (fbErr) {
@@ -103,11 +108,7 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
       if (data.success) {
         setShowRegisterModal(false);
         // تسجيل الدخول تلقائياً
-        onLoginSuccess({
-          user: data.user,
-          tenant: data.tenant,
-          isSuperAdmin: false
-        });
+        onLoginSuccess(data.user, data.tenant, false);
       } else {
         setRegError(data.error || 'تعذر تسجيل المنشأة، يرجى التأكد من البيانات');
       }
@@ -139,16 +140,28 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
     setLoginPassword('hassan@2016');
   };
 
+  // 1. تسجيل الدخول والإنشاء عبر Google Gmail (موحد كـ customer وفترة تجريبية)
   const handleGoogleLogin = async () => {
     setLoginLoading(true);
     setLoginError('');
     try {
+      const email = 'google.customer@gmail.com';
+      const name = 'مشترك Google جديد';
+
+      // ⚡ حفظ فوري في Firestore: role: "customer", trialPeriod: true
+      await saveAuthUserToFirebase({
+        provider: 'google',
+        email,
+        name,
+        company_name: 'حساب عميل Google التجريبي'
+      });
+
       const res = await safeFetch('/api/auth/google-login', {
         method: 'POST',
         body: JSON.stringify({
-          google_email: 'fahad.suwayan.owner@gmail.com',
-          google_name: 'فهد الصويان (Google Enterprise)',
-          company_name_ar: 'شركة ومشاتل الصويان السحابية'
+          google_email: email,
+          google_name: name,
+          company_name_ar: 'حساب عميل Google التجريبي'
         })
       });
       if (res.success) {
@@ -157,6 +170,82 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
         onLoginSuccess(res.user, res.tenant, res.isSuperAdmin);
       } else {
         setLoginError(res.error || 'فشل الدخول السريع عبر Google');
+      }
+    } catch (err) {
+      setLoginError(`خطأ في الاتصال: ${err.message}`);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  // 2. تسجيل الدخول والإنشاء عبر Facebook (موحد كـ customer وفترة تجريبية)
+  const handleFacebookLogin = async () => {
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const email = 'facebook.customer@fb.com';
+      const name = 'مشترك Facebook جديد';
+
+      // ⚡ حفظ فوري في Firestore: role: "customer", trialPeriod: true
+      await saveAuthUserToFirebase({
+        provider: 'facebook',
+        email,
+        name,
+        company_name: 'حساب عميل Facebook التجريبي'
+      });
+
+      const res = await safeFetch('/api/auth/facebook-login', {
+        method: 'POST',
+        body: JSON.stringify({
+          facebook_email: email,
+          facebook_name: name
+        })
+      });
+      if (res.success) {
+        setShowLoginModal(false);
+        setShowRegisterModal(false);
+        onLoginSuccess(res.user, res.tenant, res.isSuperAdmin);
+      } else {
+        setLoginError(res.error || 'فشل الدخول السريع عبر Facebook');
+      }
+    } catch (err) {
+      setLoginError(`خطأ في الاتصال: ${err.message}`);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  // 3. تسجيل الدخول والإنشاء عبر رقم الهاتف (موحد كـ customer وفترة تجريبية)
+  const handlePhoneSubmit = async (e) => {
+    e.preventDefault();
+    if (!phoneInput || phoneInput.trim().length < 8) {
+      alert('يرجى إدخال رقم جوال صحيح');
+      return;
+    }
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const cleanPhone = phoneInput.trim();
+
+      // ⚡ حفظ فوري في Firestore: role: "customer", trialPeriod: true
+      await saveAuthUserToFirebase({
+        provider: 'phone',
+        phone: cleanPhone,
+        name: `مشترك جوال (${cleanPhone})`,
+        company_name: 'حساب مشترك هاتف تجريبي'
+      });
+
+      const res = await safeFetch('/api/auth/phone-login', {
+        method: 'POST',
+        body: JSON.stringify({ phone: cleanPhone })
+      });
+      if (res.success) {
+        setShowPhoneModal(false);
+        setShowLoginModal(false);
+        setShowRegisterModal(false);
+        onLoginSuccess(res.user, res.tenant, res.isSuperAdmin);
+      } else {
+        setLoginError(res.error || 'فشل الدخول عبر رقم الهاتف');
       }
     } catch (err) {
       setLoginError(`خطأ في الاتصال: ${err.message}`);
@@ -541,37 +630,98 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
                   </div>
                 </div>
 
-                {/* Google 1-Click SSO Button */}
-                <button
-                  type="button"
-                  onClick={handleGoogleLogin}
-                  disabled={loginLoading}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.65rem',
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '12px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    color: '#0f172a',
-                    fontSize: '0.875rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 5px rgba(0,0,0,0.06)',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                  </svg>
-                  <span>تسجيل الدخول السريع عبر Google (1-Click SSO)</span>
-                </button>
+                {/* Unified Social & Phone Authentication Buttons (Role: customer, trialPeriod: true) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#047857', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>⚡ تسجيل فوري وموحد كـ (عميل/مشترك) بفترة تجريبية مجانية:</span>
+                  </div>
+
+                  {/* 1. Google Gmail */}
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={loginLoading}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.65rem',
+                      width: '100%',
+                      padding: '0.65rem',
+                      borderRadius: '10px',
+                      border: '1px solid #cbd5e1',
+                      background: '#ffffff',
+                      color: '#0f172a',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    <span>الدخول بحساب Google (Gmail)</span>
+                  </button>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                    {/* 2. Facebook */}
+                    <button
+                      type="button"
+                      onClick={handleFacebookLogin}
+                      disabled={loginLoading}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.4rem',
+                        padding: '0.65rem',
+                        borderRadius: '10px',
+                        border: '1px solid #93c5fd',
+                        background: '#eff6ff',
+                        color: '#1d4ed8',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="#1877F2">
+                        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                      </svg>
+                      <span>حساب Facebook</span>
+                    </button>
+
+                    {/* 3. Phone */}
+                    <button
+                      type="button"
+                      onClick={() => setShowPhoneModal(true)}
+                      disabled={loginLoading}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.4rem',
+                        padding: '0.65rem',
+                        borderRadius: '10px',
+                        border: '1px solid #a7f3d0',
+                        background: '#ecfdf5',
+                        color: '#065f46',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                      }}
+                    >
+                      <Smartphone size={16} style={{ color: '#047857' }} />
+                      <span>رقم الهاتف الجوال</span>
+                    </button>
+                  </div>
+                </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.75rem', margin: '0.2rem 0' }}>
                   <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }}></div>
@@ -684,6 +834,109 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
                 <button type="button" onClick={() => setShowRegisterModal(false)} className="btn btn-secondary">إلغاء</button>
                 <button type="submit" disabled={regLoading} className="btn btn-primary" style={{ background: '#047857' }}>
                   {regLoading ? 'جاري تأسيس المنشأة...' : 'تأكيد التسجيل وبدء الفترة التجريبية'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== Phone Auth Modal (Role: Customer, trialPeriod: true) ===================== */}
+      {showPhoneModal && (
+        <div className="modal-overlay" style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1rem',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div className="modal-content" style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '440px',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
+              padding: '1.25rem 1.5rem',
+              color: '#ffffff',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <Smartphone size={22} style={{ color: '#a7f3d0' }} />
+                <div>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0 }}>
+                    الدخول / التسجيل برقم الجوال
+                  </h3>
+                  <p style={{ fontSize: '0.75rem', color: '#d1fae5', margin: '0.2rem 0 0 0' }}>
+                    تسجيل تلقائي كـ (عميل/مشترك) مع تفعيل الفترة التجريبية
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPhoneModal(false)}
+                style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '1.25rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handlePhoneSubmit} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{
+                background: '#ecfdf5',
+                border: '1px solid #a7f3d0',
+                borderRadius: '10px',
+                padding: '0.75rem',
+                fontSize: '0.8rem',
+                color: '#065f46'
+              }}>
+                🔒 أمان موحد: يتم إنشاء حسابك كـ <strong>عميل/مشترك (Customer)</strong> وتفعيل اشتراك تجريبي مجاني 14 يوماً فورياً في Firebase Firestore.
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 700 }}>رقم الجوال (السعودية / دولي)</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    required
+                    type="tel"
+                    placeholder="05xxxxxxxx أو +9665xxxxxxxx"
+                    className="form-input font-mono"
+                    style={{ width: '100%', fontSize: '1rem', padding: '0.6rem 0.85rem', textAlign: 'left', direction: 'ltr' }}
+                    value={phoneInput}
+                    onChange={e => setPhoneInput(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPhoneModal(false)}
+                  className="btn btn-secondary"
+                  disabled={loginLoading}
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={loginLoading}
+                  className="btn btn-primary"
+                  style={{ background: '#047857', padding: '0.6rem 1.25rem', fontWeight: 800 }}
+                >
+                  {loginLoading ? 'جاري التحقق والتسجيل...' : 'دخول ومتابعة الحساب'}
                 </button>
               </div>
             </form>

@@ -51,25 +51,43 @@ export const LOGIN_ACTIVITIES_COLLECTION = COLLECTIONS.LOGIN_ACTIVITIES;
 export const SETTINGS_COLLECTION = COLLECTIONS.SETTINGS;
 
 // =========================================================================
-// 1. إدارة جدول الشركات والمشتركين (users collection)
+// 1. إدارة جدول الشركات والمشتركين والعملاء الجدد (users collection)
 // =========================================================================
 
 /**
- * حفظ منشأة أو شركة جديدة وتثبيتها حياً تلقائياً بحالة "نشط ومفعل"
+ * حفظ منشأة أو مشترك جديد في Firebase Firestore
+ * موحد تلقائياً كـ "عميل/مشترك" (role: "customer") مع تفعيل "فترة تجريبية" (trialPeriod: true)
+ * لمنع تحويل المسجلين الجدد إلى أصحاب مؤسسات تلقائياً
  */
 export async function saveCompanyToFirebase(companyData) {
   try {
     const timestamp = serverTimestamp();
+    const trialEndDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    
+    // فحص إذا كان الحساب هو المسؤول السوبر الرئيسي
+    const isSuperAdminEmail = companyData.email === 'elhassanelsoudy@gmail.com';
+    const assignedRole = isSuperAdminEmail ? 'super_admin' : 'customer';
+
     const docData = {
       ...companyData,
-      role: companyData.role || 'company_admin',
-      status: 'نشط ومفعل', // تثبيت الحالة كـ "نشط ومفعل" لمنع الاختفاء
+      // ⚡ توحيد رتبة المسجلين الجدد كـ "عميل/مشترك" (role: "customer") حصراً
+      role: assignedRole,
+      user_type: 'customer',
+      is_customer: true,
+      // ⚡ تفعيل الفترة التجريبية تلقائياً
+      trialPeriod: true,
+      is_trial: true,
+      trial_status: 'active',
+      trial_start_date: new Date().toISOString().split('T')[0],
+      trial_ends_at: companyData.trial_ends_at || trialEndDate,
+      trial_days_remaining: 14,
+      status: 'نشط ومفعل', // تثبيت الحالة كـ "نشط ومفعل" لمنع الاختفاء عند F5
       active_status: 'نشط ومفعل',
       created_at: new Date().toISOString(),
       firestore_timestamp: timestamp,
-      source: 'mohasb_web_pos',
+      source: companyData.source || 'mohasb_web_pos',
       is_locked: false,
-      subscription_plan: companyData.subscription_plan || 'الباقة الاحترافية الشاملة'
+      subscription_plan: companyData.subscription_plan || 'الباقة التجريبية للعملاء'
     };
 
     // 1. الحفظ في مجموعة "users"
@@ -84,9 +102,77 @@ export async function saveCompanyToFirebase(companyData) {
       // تجاهل إذا كانت الصلاحيات تقتصر على users
     }
 
-    return { success: true, id: userDocRef.id };
+    return { success: true, id: userDocRef.id, user: { id: userDocRef.id, ...docData } };
   } catch (error) {
     console.error('Firebase save company error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * ⚡ دالة توحيد رتبة المسجلين الجدد في Firebase Firestore
+ * تعمل لجميع قنوات التسجيل (Google Gmail، Facebook، أو رقم الهاتف)
+ * وتنشئ الحساب تلقائياً كـ "عميل/مشترك" (role: "customer") مع تفعيل "فترة تجريبية" (trialPeriod: true)
+ * بدون أي تفرقة بين الطرق لمنع تحويلهم إلى أصحاب مؤسسات
+ */
+export async function saveAuthUserToFirebase({
+  provider = 'google', // 'google' | 'facebook' | 'phone' | 'email'
+  email = '',
+  phone = '',
+  name = '',
+  name_ar = '',
+  company_name = ''
+}) {
+  try {
+    const timestamp = serverTimestamp();
+    const trialEndDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const customerDoc = {
+      email: email || '',
+      phone: phone || '',
+      name: name || name_ar || (provider === 'phone' ? `مشترك هاتف (${phone})` : 'عميل جديد'),
+      name_ar: name_ar || name || (provider === 'phone' ? `مشترك هاتف (${phone})` : 'عميل جديد'),
+      company_name_ar: company_name || 'حساب مشترك تجريبي',
+      // ⚡ توحيد الرتبة كـ عميل/مشترك (role: "customer") حصراً
+      role: 'customer',
+      user_type: 'customer',
+      is_customer: true,
+      // ⚡ تفعيل فترة تجريبية تلقائياً لجميع الطرق وبدون أي تفرقة
+      trialPeriod: true,
+      is_trial: true,
+      trial_status: 'active',
+      trial_start_date: new Date().toISOString().split('T')[0],
+      trial_ends_at: trialEndDate,
+      trial_days_remaining: 14,
+      auth_provider: provider,
+      status: 'نشط ومفعل',
+      active_status: 'نشط ومفعل',
+      source: `signup_${provider}`,
+      created_at: new Date().toISOString(),
+      firestore_timestamp: timestamp,
+      is_locked: false,
+      subscription_plan: 'الباقة التجريبية للعملاء والمشتركين'
+    };
+
+    // 1. الحفظ في مجموعة users
+    const usersCol = collection(db, USERS_COLLECTION);
+    const userDocRef = await addDoc(usersCol, customerDoc);
+
+    // 2. المزامنة أيضاً في tenants
+    try {
+      const tenantsCol = collection(db, TENANTS_COLLECTION);
+      await setDoc(doc(tenantsCol, userDocRef.id), { ...customerDoc, id: userDocRef.id });
+    } catch (e) {
+      // تجاهل
+    }
+
+    return {
+      success: true,
+      id: userDocRef.id,
+      user: { id: userDocRef.id, ...customerDoc }
+    };
+  } catch (error) {
+    console.error(`Firebase auth user save error (${provider}):`, error);
     return { success: false, error: error.message };
   }
 }
