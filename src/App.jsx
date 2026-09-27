@@ -175,8 +175,17 @@ export default function App() {
     setCurrentUser(null);
     setCurrentTenant(null);
     setIsImpersonating(false);
-    localStorage.removeItem('suwayan_user');
-    localStorage.removeItem('suwayan_tenant');
+    try {
+      const savedLang = localStorage.getItem('suwayan_lang') || 'ar';
+      const savedTheme = localStorage.getItem('suwayan_theme') || 'light';
+      localStorage.clear();
+      sessionStorage.clear();
+      // Restore user language & theme preferences
+      localStorage.setItem('suwayan_lang', savedLang);
+      localStorage.setItem('suwayan_theme', savedTheme);
+    } catch (e) {
+      console.warn('Storage cleanup notice:', e);
+    }
     setActiveTab('dashboard');
   };
 
@@ -337,6 +346,7 @@ export default function App() {
           theme={theme}
           onToggleTheme={toggleTheme}
           onToggleMobileMenu={() => setMobileMenuOpen(prev => !prev)}
+          onLogout={handleLogout}
         />
 
         {/* Dynamic Content Body */}

@@ -13,7 +13,8 @@ import {
   Bell,
   AlertTriangle,
   X,
-  Menu
+  Menu,
+  LogOut
 } from 'lucide-react';
 import { t } from '../i18n';
 
@@ -36,7 +37,8 @@ export default function Header({
   onToggleLang,
   theme = 'light',
   onToggleTheme,
-  onToggleMobileMenu
+  onToggleMobileMenu,
+  onLogout
 }) {
   const isCashier = currentUser?.role === 'cashier';
   const [showLowStockMenu, setShowLowStockMenu] = useState(false);
@@ -347,6 +349,30 @@ export default function Header({
           <Globe size={15} />
           <span>{t('switch_lang', lang)}</span>
         </button>
+
+        {/* System Bar Logout Button (تسجيل الخروج في شريط النظام) */}
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            className="btn btn-secondary"
+            style={{
+              padding: '0.45rem 0.8rem',
+              fontSize: '0.825rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              color: '#ef4444',
+              borderColor: 'rgba(239, 68, 68, 0.4)',
+              background: 'rgba(239, 68, 68, 0.05)',
+              cursor: 'pointer',
+              fontWeight: 700
+            }}
+            title="تسجيل الخروج ومسح الجلسة فوراً"
+          >
+            <LogOut size={15} style={{ color: '#ef4444' }} />
+            <span>خروج</span>
+          </button>
+        )}
 
         {/* Quick Actions */}
         {onOpenTouchPos && (

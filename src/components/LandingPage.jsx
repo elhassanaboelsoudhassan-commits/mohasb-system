@@ -119,26 +119,7 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
     }
   };
 
-  // أزرار التعبئة السريعة لتسهيل التجربة للمستخدم
-  const prefillSuperAdmin = () => {
-    setLoginIdentifier('elhassanelsoudy@gmail.com');
-    setLoginPassword('hassan@2016');
-  };
 
-  const prefillTenantOwner = () => {
-    setLoginIdentifier('owner@al-suwayan.sa');
-    setLoginPassword('hassan@2016');
-  };
-
-  const prefillCashier = () => {
-    setLoginIdentifier('cashier1');
-    setLoginPassword('hassan@2016');
-  };
-
-  const prefillTrialOwner = () => {
-    setLoginIdentifier('sultan_owner');
-    setLoginPassword('hassan@2016');
-  };
 
   // 1. تسجيل الدخول والإنشاء عبر Google Gmail (موحد كـ customer وفترة تجريبية)
   const handleGoogleLogin = async () => {
@@ -609,26 +590,7 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
                   </div>
                 )}
 
-                {/* Quick pre-fill shortcuts */}
-                <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', marginBottom: '0.4rem' }}>
-                    ⚡ تسجيل دخول تجريبي سريع بنقرة واحدة:
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                    <button type="button" onClick={prefillSuperAdmin} style={{ fontSize: '0.725rem', padding: '0.3rem 0.6rem', borderRadius: '6px', background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', fontWeight: 700, cursor: 'pointer' }}>
-                      👑 المسؤول المطلق (elhassanelsoudy)
-                    </button>
-                    <button type="button" onClick={prefillTenantOwner} style={{ fontSize: '0.725rem', padding: '0.3rem 0.6rem', borderRadius: '6px', background: '#e0f2fe', border: '1px solid #bae6fd', color: '#0369a1', fontWeight: 700, cursor: 'pointer' }}>
-                      🏢 مالك شركة الصويان
-                    </button>
-                    <button type="button" onClick={prefillCashier} style={{ fontSize: '0.725rem', padding: '0.3rem 0.6rem', borderRadius: '6px', background: '#fef3c7', border: '1px solid #fde68a', color: '#92400e', fontWeight: 700, cursor: 'pointer' }}>
-                      🛒 كاشير صالة الرياض (cashier1)
-                    </button>
-                    <button type="button" onClick={prefillTrialOwner} style={{ fontSize: '0.725rem', padding: '0.3rem 0.6rem', borderRadius: '6px', background: '#f3e8ff', border: '1px solid #d8b4fe', color: '#6b21a8', fontWeight: 700, cursor: 'pointer' }}>
-                      ⏳ شركة تجريبية (sultan_owner)
-                    </button>
-                  </div>
-                </div>
+
 
                 {/* Unified Social & Phone Authentication Buttons (Role: customer, trialPeriod: true) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>

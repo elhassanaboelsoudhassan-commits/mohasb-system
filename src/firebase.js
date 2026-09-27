@@ -433,12 +433,55 @@ export function subscribeToLiveSales(callback) {
     return onSnapshot(salesCol, (snapshot) => {
       const list = [];
       snapshot.forEach(docSnap => {
-        list.push({ id: docSnap.id, ...docSnap.data() });
+        const data = docSnap.data();
+        list.push({
+          id: docSnap.id,
+          ...data,
+          invoice_number: data.invoice_number || `INV-${docSnap.id.slice(-6)}`,
+          issue_date: data.issue_date || data.invoice_date || data.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+          subtotal: Number(data.subtotal || data.total_before_vat || (data.grand_total ? data.grand_total / 1.15 : 0)),
+          vat_total: Number(data.vat_total || data.vat_amount || (data.grand_total ? data.grand_total - (data.grand_total / 1.15) : 0)),
+          grand_total: Number(data.grand_total || data.total_amount || 0),
+          cost_total: Number(data.cost_total || (data.items ? data.items.reduce((s, it) => s + (Number(it.cost_price || 0) * Number(it.quantity || 1)), 0) : 0)),
+          is_firebase_live: true
+        });
       });
+      list.sort((a, b) => new Date(b.issue_date || b.created_at || 0) - new Date(a.issue_date || a.created_at || 0));
       if (list.length > 0) callback(list);
     }, (err) => console.warn('Sales snapshot warning:', err));
   } catch (e) {
     return () => {};
+  }
+}
+
+/**
+ * جلب فواتير المبيعات مباشرة وقياسياً (getDocs) من مجموعة "sales" في Firestore
+ * يتم استدعاؤها فور تحميل شاشة التقارير لمنع تصفير أو وميض الفواتير عند F5
+ */
+export async function fetchFirebaseSales() {
+  try {
+    const salesCol = collection(db, SALES_COLLECTION);
+    const snapshot = await getDocs(salesCol);
+    const list = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      list.push({
+        id: docSnap.id,
+        ...data,
+        invoice_number: data.invoice_number || `INV-${docSnap.id.slice(-6)}`,
+        issue_date: data.issue_date || data.invoice_date || data.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+        subtotal: Number(data.subtotal || data.total_before_vat || (data.grand_total ? data.grand_total / 1.15 : 0)),
+        vat_total: Number(data.vat_total || data.vat_amount || (data.grand_total ? data.grand_total - (data.grand_total / 1.15) : 0)),
+        grand_total: Number(data.grand_total || data.total_amount || 0),
+        cost_total: Number(data.cost_total || (data.items ? data.items.reduce((s, it) => s + (Number(it.cost_price || 0) * Number(it.quantity || 1)), 0) : 0)),
+        is_firebase_live: true
+      });
+    });
+    list.sort((a, b) => new Date(b.issue_date || b.created_at || 0) - new Date(a.issue_date || a.created_at || 0));
+    return list;
+  } catch (error) {
+    console.warn('Firebase fetch sales warning:', error);
+    return [];
   }
 }
 

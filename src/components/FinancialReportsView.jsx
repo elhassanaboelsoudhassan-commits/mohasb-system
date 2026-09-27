@@ -21,6 +21,7 @@ import {
   Receipt
 } from 'lucide-react';
 import { safeFetch } from '../api/client';
+import { fetchFirebaseSales, subscribeToLiveSales } from '../firebase';
 
 export default function FinancialReportsView({ branches = [], selectedBranch = 'all' }) {
   const getTodayStr = () => new Date().toISOString().split('T')[0];
@@ -41,7 +42,24 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
   const [searchTerm, setSearchTerm] = useState('');
 
   // Data States
-  const [salesPurchasesData, setSalesPurchasesData] = useState(null);
+  const [firebaseSales, setFirebaseSales] = useState(() => {
+    try {
+      const cached = localStorage.getItem('suwayan_cached_fb_sales');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [salesPurchasesData, setSalesPurchasesData] = useState(() => {
+    try {
+      const cached = localStorage.getItem('suwayan_cached_reports');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const [trialData, setTrialData] = useState(null);
   const [pnlData, setPnlData] = useState(null);
   const [balanceSheetData, setBalanceSheetData] = useState(null);
@@ -50,6 +68,33 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
   const [selectedContactId, setSelectedContactId] = useState('');
   const [contactStatement, setContactStatement] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // ربط مباشر وحي مع Firebase Firestore لمجموعة "sales"
+  useEffect(() => {
+    // 1. استدعاء قياسي فوري (getDocs) لجلب فواتير المبيعات من Firebase وتثبيتها فوراً ضد F5
+    fetchFirebaseSales().then(sales => {
+      if (Array.isArray(sales) && sales.length > 0) {
+        setFirebaseSales(sales);
+        try {
+          localStorage.setItem('suwayan_cached_fb_sales', JSON.stringify(sales));
+        } catch (e) {}
+      }
+    }).catch(err => console.warn('Fetch Firebase sales warning:', err));
+
+    // 2. اشتراك حي ومباشر (onSnapshot) لالتقاط أي فواتير جديدة لحظياً وبثها للتقارير
+    const unsubscribe = subscribeToLiveSales((liveSales) => {
+      if (Array.isArray(liveSales) && liveSales.length > 0) {
+        setFirebaseSales(liveSales);
+        try {
+          localStorage.setItem('suwayan_cached_fb_sales', JSON.stringify(liveSales));
+        } catch (e) {}
+      }
+    });
+
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
 
   // Apply Quick Date Presets
   const applyDatePreset = (preset) => {
@@ -91,17 +136,114 @@ export default function FinancialReportsView({ branches = [], selectedBranch = '
     } else {
       fetchReportData();
     }
-  }, [reportTab, selectedBranchFilter, selectedCashierFilter, fromDate, toDate]);
+  }, [reportTab, selectedBranchFilter, selectedCashierFilter, fromDate, toDate, firebaseSales]);
 
   const fetchSalesPurchasesReport = async () => {
-    setLoading(true);
+    // عدم تفعيل مؤشر التحميل الكامل في حال وجود بيانات سابقة لمنع الوميض والتصفير
+    if (!salesPurchasesData) {
+      setLoading(true);
+    }
     try {
+      let fbSales = firebaseSales;
+      try {
+        const fetched = await fetchFirebaseSales();
+        if (Array.isArray(fetched) && fetched.length > 0) {
+          fbSales = fetched;
+          setFirebaseSales(fetched);
+          try {
+            localStorage.setItem('suwayan_cached_fb_sales', JSON.stringify(fetched));
+          } catch (e) {}
+        }
+      } catch (e) {
+        console.warn('Firebase sales load error in report:', e);
+      }
+
       const branchParam = selectedBranchFilter !== 'all' ? `&branchId=${selectedBranchFilter}` : '';
       const cashierParam = selectedCashierFilter !== 'all' ? `&cashierId=${encodeURIComponent(selectedCashierFilter)}` : '';
-      const res = await safeFetch(`/api/reports/sales-purchases?fromDate=${fromDate}&toDate=${toDate}${branchParam}${cashierParam}`);
-      if (res && res.success && res.data) {
-        setSalesPurchasesData(res.data);
+      
+      let res = null;
+      try {
+        res = await safeFetch(`/api/reports/sales-purchases?fromDate=${fromDate}&toDate=${toDate}${branchParam}${cashierParam}`);
+      } catch (fetchErr) {
+        console.warn('Backend sales-purchases fetch notice:', fetchErr);
       }
+
+      const baseData = (res && res.success && res.data) ? res.data : {
+        sales: [],
+        purchases: [],
+        expenses: [],
+        summary: {
+          total_sales_revenue: 0,
+          total_sales_vat: 0,
+          total_sales_grand: 0,
+          total_purchases_cost: 0,
+          total_purchases_vat: 0,
+          total_expenses_cost: 0,
+          total_expenses_vat: 0
+        }
+      };
+
+      // دمج فواتير Firebase مع فواتير النظام مع استبعاد التكرار
+      const mergedMap = new Map();
+      (baseData.sales || []).forEach(s => {
+        const key = s.invoice_number || s.id;
+        mergedMap.set(key, s);
+      });
+
+      (fbSales || []).forEach(fs => {
+        const key = fs.invoice_number || fs.id;
+        const sDate = fs.issue_date || fs.created_at?.split('T')[0] || '';
+        if (fromDate && sDate < fromDate) return;
+        if (toDate && sDate > toDate) return;
+        if (selectedBranchFilter !== 'all' && String(fs.branch_id) !== String(selectedBranchFilter)) return;
+        if (selectedCashierFilter !== 'all' && String(fs.cashier_id) !== String(selectedCashierFilter) && fs.cashier_name !== selectedCashierFilter) return;
+        mergedMap.set(key, { ...(mergedMap.get(key) || {}), ...fs });
+      });
+
+      const allSales = Array.from(mergedMap.values());
+      allSales.sort((a, b) => new Date(b.issue_date || b.created_at || 0) - new Date(a.issue_date || a.created_at || 0));
+
+      // حساب الإجماليات والضرائب وصافي الأرباح بالمعادلات المالية الدقيقة
+      const totalSalesRevenue = allSales.reduce((acc, s) => acc + (Number(s.subtotal) || (Number(s.grand_total) / 1.15) || 0), 0);
+      const totalSalesVat = allSales.reduce((acc, s) => acc + (Number(s.vat_total) || (Number(s.grand_total) - (Number(s.grand_total) / 1.15)) || 0), 0);
+      const totalSalesGrand = allSales.reduce((acc, s) => acc + (Number(s.grand_total) || (Number(s.subtotal) * 1.15) || 0), 0);
+
+      const totalPurchasesCost = baseData.summary?.total_purchases_cost || 0;
+      const totalExpensesCost = baseData.summary?.total_expenses_cost || 0;
+      const totalPurchasesVat = baseData.summary?.total_purchases_vat || 0;
+      const totalExpensesVat = baseData.summary?.total_expenses_vat || 0;
+
+      const totalOutputVat = totalSalesVat;
+      const totalInputVat = totalPurchasesVat + totalExpensesVat;
+      const netVatDue = totalOutputVat - totalInputVat;
+
+      // معادلة الأرباح الدقيقة
+      const netProfit = totalSalesRevenue - totalPurchasesCost - totalExpensesCost;
+      const profitMargin = totalSalesRevenue > 0 ? ((netProfit / totalSalesRevenue) * 100) : 0;
+
+      const updatedReport = {
+        ...baseData,
+        sales: allSales,
+        summary: {
+          ...baseData.summary,
+          total_sales_revenue: Number(totalSalesRevenue.toFixed(2)),
+          total_sales_vat: Number(totalSalesVat.toFixed(2)),
+          total_sales_grand: Number(totalSalesGrand.toFixed(2)),
+          sales_count: allSales.length,
+          average_sale: allSales.length > 0 ? Number((totalSalesRevenue / allSales.length).toFixed(2)) : 0,
+          net_profit: Number(netProfit.toFixed(2)),
+          profit_margin_percent: Number(profitMargin.toFixed(1)),
+          is_profitable: netProfit >= 0,
+          total_output_vat: Number(totalOutputVat.toFixed(2)),
+          total_input_vat: Number(totalInputVat.toFixed(2)),
+          net_vat_due: Number(netVatDue.toFixed(2))
+        }
+      };
+
+      setSalesPurchasesData(updatedReport);
+      try {
+        localStorage.setItem('suwayan_cached_reports', JSON.stringify(updatedReport));
+      } catch (e) {}
     } catch (err) {
       console.error('Error fetching sales-purchases report:', err);
     } finally {
