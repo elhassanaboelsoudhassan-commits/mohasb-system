@@ -27,9 +27,14 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
   // صلاحيات الكاشير من الإدارة
   const [cashierPermissions, setCashierPermissions] = useState(() => {
     try {
+      const allCashiers = LocalSaaSStorage.getCashiers('all');
+      const found = allCashiers.find(c => c.id == currentUser?.id || c.username == currentUser?.username);
+      if (found && found.permissions) return found.permissions;
       return LocalSaaSStorage.getCashierPermissions();
     } catch {
       return {
+        can_create_sales: true,
+        can_view_own_reports: true,
         allow_discount: true,
         max_discount_percent: 15,
         allow_delete_items: true,
@@ -41,12 +46,21 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
   });
 
   useEffect(() => {
-    safeFetch('/api/cashier-permissions').then(res => {
-      if (res && res.success && res.data) {
-        setCashierPermissions(res.data);
+    safeFetch('/api/cashiers').then(res => {
+      if (res && res.success && Array.isArray(res.data)) {
+        const found = res.data.find(c => c.id == currentUser?.id || c.username == currentUser?.username);
+        if (found && found.permissions) {
+          setCashierPermissions(found.permissions);
+          return;
+        }
       }
+      return safeFetch('/api/cashier-permissions').then(pRes => {
+        if (pRes && pRes.success && pRes.data) {
+          setCashierPermissions(prev => ({ ...prev, ...pRes.data }));
+        }
+      });
     }).catch(() => {});
-  }, []);
+  }, [currentUser]);
 
   // إدارة ورديات الكاشير وجرد الصندوق
   const [currentShift, setCurrentShift] = useState(null);
@@ -263,6 +277,12 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
       return;
     }
 
+    const isCashierRestricted = currentUser?.role === 'cashier' || (!currentUser?.role?.includes('admin'));
+    if (cashierPermissions.can_create_sales === false && isCashierRestricted) {
+      alert('🔒 عذراً، تم تعطيل صلاحية تسجيل المبيعات والفواتير لحسابك من قبل المحاسب الرئيسي / الإدارة!');
+      return;
+    }
+
     if (isDelivery && (!deliveryData.recipient_name || !deliveryData.recipient_phone || !deliveryData.shipping_address)) {
       alert('⚠️ يرجى استكمال بيانات الشحن والتوصيل (الاسم، الهاتف، العنوان)!');
       return;
@@ -369,6 +389,14 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
     <div className="flex flex-col lg:flex-row h-[calc(100vh-80px)] gap-3 p-2 bg-slate-900 overflow-hidden select-none">
       {/* 1. قسم المنتجات واللمس السريع (Touch Grid) */}
       <div className="flex-1 flex flex-col min-w-0 bg-slate-800/80 rounded-2xl border border-slate-700/70 p-3 shadow-xl backdrop-blur-sm overflow-hidden">
+        {/* Banner if sales permission is disabled */}
+        {cashierPermissions.can_create_sales === false && (currentUser?.role === 'cashier' || !currentUser?.role?.includes('admin')) && (
+          <div className="bg-rose-950/80 border border-rose-700 text-rose-200 px-4 py-2.5 rounded-xl mb-2 flex items-center gap-2 text-xs font-bold shadow-lg">
+            <span className="text-base">🔒</span>
+            <span>تنبيه أمني: تم تعطيل صلاحية تسجيل المبيعات والفواتير لحسابك بواسطة المسؤول. لا يمكنك إصدار أي فواتير جديدة حالياً.</span>
+          </div>
+        )}
+
         {/* شريط إدارة وردية الكاشير وجرد الخزينة (Cashier Shift Bar) */}
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 mb-2.5 bg-gradient-to-r from-slate-900 via-emerald-950/50 to-slate-900 rounded-xl border border-emerald-600/30 text-xs">
           <div className="flex items-center gap-2.5">
@@ -410,14 +438,16 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
             >
               📜 سجل الورديات
             </button>
-            <button
-              type="button"
-              onClick={() => setShowMySalesModal(true)}
-              className="px-2.5 py-1.5 rounded-lg font-bold text-xs bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/60 transition-all flex items-center gap-1"
-              title="استعراض مبيعاتي وفواتيري الشخصية بالتواريخ"
-            >
-              <span>📊 مبيعاتي بالتواريخ</span>
-            </button>
+            {cashierPermissions.can_view_own_reports !== false && (
+              <button
+                type="button"
+                onClick={() => setShowMySalesModal(true)}
+                className="px-2.5 py-1.5 rounded-lg font-bold text-xs bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/60 transition-all flex items-center gap-1"
+                title="استعراض مبيعاتي وفواتيري الشخصية بالتواريخ"
+              >
+                <span>📊 مبيعاتي بالتواريخ</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -887,9 +917,9 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
           {/* زر إتمام البيع والطباعة الفورية */}
           <button
             onClick={handleCheckout}
-            disabled={processing || cart.length === 0}
+            disabled={processing || cart.length === 0 || (cashierPermissions.can_create_sales === false && (currentUser?.role === 'cashier' || !currentUser?.role?.includes('admin')))}
             className={`w-full mt-2.5 py-3 rounded-xl font-black text-base flex items-center justify-center gap-2 shadow-xl transition-all duration-200 active:scale-95 ${
-              processing || cart.length === 0
+              processing || cart.length === 0 || (cashierPermissions.can_create_sales === false && (currentUser?.role === 'cashier' || !currentUser?.role?.includes('admin')))
                 ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
                 : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-950/60'
             }`}
@@ -898,6 +928,10 @@ export default function TouchPosView({ activeTenant, activeBranch, currentUser, 
               <>
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                 <span>جاري إتمام الفاتورة والقيد...</span>
+              </>
+            ) : (cashierPermissions.can_create_sales === false && (currentUser?.role === 'cashier' || !currentUser?.role?.includes('admin'))) ? (
+              <>
+                <span>🔒 صلاحية تسجيل المبيعات معطلة</span>
               </>
             ) : (
               <>

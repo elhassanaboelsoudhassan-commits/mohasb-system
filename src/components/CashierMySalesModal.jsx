@@ -15,9 +15,10 @@ import {
   Eye, 
   Printer,
   CalendarDays,
-  ShieldAlert
+  ShieldAlert,
+  Lock
 } from 'lucide-react';
-import { safeFetch } from '../api/client';
+import { safeFetch, LocalSaaSStorage } from '../api/client';
 import PrintableInvoiceModal from './PrintableInvoiceModal';
 
 export default function CashierMySalesModal({ 
@@ -106,6 +107,77 @@ export default function CashierMySalesModal({
   };
 
   if (!isOpen) return null;
+
+  // فحص صلاحية استخراج التقارير للكاشير
+  const cashierPermissions = (() => {
+    try {
+      const allCashiers = LocalSaaSStorage.getCashiers('all');
+      const found = allCashiers.find(c => c.id == currentUser?.id || c.username == currentUser?.username);
+      if (found && found.permissions) return found.permissions;
+      return LocalSaaSStorage.getCashierPermissions();
+    } catch {
+      return { can_view_own_reports: true };
+    }
+  })();
+
+  const canViewReports = currentUser?.role?.includes('admin') || cashierPermissions.can_view_own_reports !== false;
+
+  if (!canViewReports) {
+    return (
+      <div className="modal-overlay" style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(15, 23, 42, 0.78)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1100,
+        padding: '1rem',
+        backdropFilter: 'blur(5px)'
+      }}>
+        <div className="modal-content" style={{
+          backgroundColor: '#ffffff',
+          borderRadius: '20px',
+          width: '100%',
+          maxWidth: '520px',
+          padding: '2.5rem 2rem',
+          textAlign: 'center',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          border: '2px solid #fecaca'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '50%',
+            background: '#fee2e2',
+            color: '#dc2626',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 1.25rem auto'
+          }}>
+            <Lock size={32} />
+          </div>
+          <h3 style={{ fontSize: '1.35rem', fontWeight: 900, color: '#991b1b', marginBottom: '0.75rem' }}>
+            صلاحية استخراج التقارير معطلة لحسابك
+          </h3>
+          <p style={{ color: '#64748b', fontSize: '0.9rem', lineHeight: '1.6', marginBottom: '1.5rem' }}>
+            عذراً، قام المحاسب الرئيسي / مدير النظام بتعطيل صلاحية استخراج التقارير والاطلاع على المبيعات لهذا الحساب. يرجى مراجعة إدارة الفرع لتفعيل الصلاحية.
+          </p>
+          <button
+            onClick={onClose}
+            className="btn btn-secondary"
+            style={{ padding: '0.6rem 2rem', fontWeight: 700 }}
+          >
+            إغلاق
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const invoices = salesData.invoices || [];
   const filteredInvoices = invoices.filter(inv => {

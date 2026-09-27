@@ -65,12 +65,21 @@ export default function CashierPosView({
   });
 
   useEffect(() => {
-    safeFetch('/api/cashier-permissions').then(res => {
-      if (res && res.success && res.data) {
-        setCashierPermissions(prev => ({ ...prev, ...res.data }));
+    safeFetch('/api/cashiers').then(res => {
+      if (res && res.success && Array.isArray(res.data)) {
+        const found = res.data.find(c => c.id == currentUser?.id || c.username == currentUser?.username);
+        if (found && found.permissions) {
+          setCashierPermissions(found.permissions);
+          return;
+        }
       }
+      return safeFetch('/api/cashier-permissions').then(pRes => {
+        if (pRes && pRes.success && pRes.data) {
+          setCashierPermissions(prev => ({ ...prev, ...pRes.data }));
+        }
+      });
     }).catch(() => {});
-  }, []);
+  }, [currentUser]);
 
   const activeBranchId = currentUser?.branch_id || branches[0]?.id || 1;
   const currentBranch = branches.find(b => b.id == activeBranchId) || branches[0];
@@ -173,6 +182,11 @@ export default function CashierPosView({
   // إتمام البيع
   const handleCheckout = async () => {
     if (cart.length === 0) return;
+    const isCashierRestricted = currentUser?.role === 'cashier' || (!currentUser?.role?.includes('admin'));
+    if (cashierPermissions.can_create_sales === false && isCashierRestricted) {
+      alert('🔒 عذراً، تم تعطيل صلاحية تسجيل المبيعات والفواتير لحسابك من قبل المحاسب الرئيسي / الإدارة!');
+      return;
+    }
     setCheckoutLoading(true);
     try {
       const data = await safeFetch('/api/invoices', {
@@ -229,6 +243,26 @@ export default function CashierPosView({
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '1.5rem', height: 'calc(100vh - 120px)' }}>
       {/* Products & Catalog Column */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', overflowY: 'auto' }}>
+        {/* Banner if sales permission is disabled */}
+        {cashierPermissions.can_create_sales === false && (currentUser?.role === 'cashier' || !currentUser?.role?.includes('admin')) && (
+          <div style={{
+            background: '#fef2f2',
+            border: '2px solid #fecaca',
+            color: '#991b1b',
+            padding: '0.85rem 1.25rem',
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            fontWeight: 800,
+            fontSize: '0.9rem',
+            boxShadow: '0 4px 12px rgba(239, 68, 68, 0.08)'
+          }}>
+            <Lock size={20} style={{ flexShrink: 0, color: '#dc2626' }} />
+            <span>⚠️ تنبيه أمني: تم تعطيل صلاحية تسجيل المبيعات والفواتير لحسابك بواسطة المسؤول. لا يمكنك إصدار أي فواتير جديدة حالياً.</span>
+          </div>
+        )}
+
         {/* Top Control Bar */}
         <div className="card" style={{ padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
           {/* Price Tier Toggle */}
@@ -266,28 +300,30 @@ export default function CashierPosView({
           </div>
 
           {/* Cashier Personal Sales Button */}
-          <button
-            type="button"
-            onClick={() => setShowMySalesModal(true)}
-            className="btn btn-secondary"
-            style={{
-              padding: '0.45rem 0.9rem',
-              borderRadius: '8px',
-              border: '1px solid #bfdbfe',
-              background: '#eff6ff',
-              color: '#1d4ed8',
-              fontWeight: 800,
-              fontSize: '0.825rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem'
-            }}
-            title="استعراض مبيعاتي وفواتيري الشخصية بالتواريخ"
-          >
-            <Receipt size={15} />
-            <span>📊 مبيعاتي الشخصية</span>
-          </button>
+          {cashierPermissions.can_view_own_reports !== false && (
+            <button
+              type="button"
+              onClick={() => setShowMySalesModal(true)}
+              className="btn btn-secondary"
+              style={{
+                padding: '0.45rem 0.9rem',
+                borderRadius: '8px',
+                border: '1px solid #bfdbfe',
+                background: '#eff6ff',
+                color: '#1d4ed8',
+                fontWeight: 800,
+                fontSize: '0.825rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem'
+              }}
+              title="استعراض مبيعاتي وفواتيري الشخصية بالتواريخ"
+            >
+              <Receipt size={15} />
+              <span>📊 مبيعاتي الشخصية</span>
+            </button>
+          )}
 
           {/* Search bar */}
           <div style={{ position: 'relative', width: '280px' }}>
@@ -607,11 +643,21 @@ export default function CashierPosView({
         {/* Submit Button */}
         <button
           onClick={handleCheckout}
-          disabled={cart.length === 0 || checkoutLoading}
+          disabled={cart.length === 0 || checkoutLoading || (cashierPermissions.can_create_sales === false && (currentUser?.role === 'cashier' || !currentUser?.role?.includes('admin')))}
           className="btn btn-primary"
-          style={{ width: '100%', padding: '0.75rem', fontWeight: 800, background: '#047857' }}
+          style={{
+            width: '100%',
+            padding: '0.75rem',
+            fontWeight: 800,
+            background: (cashierPermissions.can_create_sales === false && (currentUser?.role === 'cashier' || !currentUser?.role?.includes('admin'))) ? '#94a3b8' : '#047857',
+            cursor: (cashierPermissions.can_create_sales === false && (currentUser?.role === 'cashier' || !currentUser?.role?.includes('admin'))) ? 'not-allowed' : 'pointer'
+          }}
         >
-          {checkoutLoading ? 'جاري خصم المخزون والفوترة...' : 'إتمام البيع وطباعة الفاتورة (ZATCA)'}
+          {checkoutLoading 
+            ? 'جاري خصم المخزون والفوترة...' 
+            : (cashierPermissions.can_create_sales === false && (currentUser?.role === 'cashier' || !currentUser?.role?.includes('admin')))
+              ? '🔒 صلاحية تسجيل المبيعات معطلة'
+              : 'إتمام البيع وطباعة الفاتورة (ZATCA)'}
         </button>
       </div>
 

@@ -19,14 +19,14 @@ import {
   deleteSaleFromFirebase,
   saveCashierPermissionsToFirebase,
   fetchCashierPermissionsFromFirebase
-} from '../firebase';
+} from '../firebase.js';
 import {
   generateZatcaUblXml,
   generateZatcaPhase2QR,
   generateSha256Hex,
   generateZatcaCsr,
   generateZatcaCsid
-} from '../utils/zatcaPhase2';
+} from '../utils/zatcaPhase2.js';
 
 // بيانات المشاتل الافتراضية الأولية
 const SEED_TENANTS = [
@@ -603,12 +603,17 @@ const SEED_CENTRAL_PRODUCTS = [
   }
 ];
 
+const _memoryStore = new Map();
+
 // مساعد التخزين المحلي الآمن
 export class LocalSaaSStorage {
   static get(key, fallback) {
     try {
-      const data = localStorage.getItem(`suwayan_${key}`);
-      return data ? JSON.parse(data) : fallback;
+      if (typeof localStorage !== 'undefined') {
+        const data = localStorage.getItem(`suwayan_${key}`);
+        return data ? JSON.parse(data) : fallback;
+      }
+      return _memoryStore.has(`suwayan_${key}`) ? JSON.parse(_memoryStore.get(`suwayan_${key}`)) : fallback;
     } catch {
       return fallback;
     }
@@ -616,7 +621,11 @@ export class LocalSaaSStorage {
 
   static set(key, value) {
     try {
-      localStorage.setItem(`suwayan_${key}`, JSON.stringify(value));
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(`suwayan_${key}`, JSON.stringify(value));
+      } else {
+        _memoryStore.set(`suwayan_${key}`, JSON.stringify(value));
+      }
     } catch (e) {
       console.error('Storage error:', e);
     }
@@ -779,7 +788,27 @@ export class LocalSaaSStorage {
 
   static getInvoices(tenantId = 1) {
     const list = this.get('invoices', SEED_INVOICES);
-    return list.filter(inv => inv.tenant_id == tenantId);
+    return list.filter(inv => inv.tenant_id == tenantId || !inv.tenant_id);
+  }
+
+  static saveInvoice(invoice) {
+    const list = this.get('invoices', SEED_INVOICES);
+    const existingIndex = list.findIndex(inv => inv.id === invoice.id || (invoice.invoice_number && inv.invoice_number === invoice.invoice_number));
+    if (existingIndex !== -1) {
+      list[existingIndex] = { ...list[existingIndex], ...invoice, updated_at: new Date().toISOString() };
+    } else {
+      list.unshift({
+        id: invoice.id || Date.now(),
+        tenant_id: invoice.tenant_id || 1,
+        ...invoice,
+        created_at: invoice.created_at || new Date().toISOString()
+      });
+    }
+    this.set('invoices', list);
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('suwayan_invoices_updated', { detail: list }));
+    }
+    return invoice;
   }
 
   static getJournals(tenantId = 1) {
@@ -1013,10 +1042,12 @@ export class LocalSaaSStorage {
   static saveCashier(cashier) {
     const list = this.getCashiers('all');
     const idx = list.findIndex(c => c.id == cashier.id || (cashier.username && c.username === cashier.username));
+    let savedCashier = null;
     if (idx !== -1) {
       list[idx] = { ...list[idx], ...cashier, updated_at: new Date().toISOString() };
+      savedCashier = list[idx];
     } else {
-      list.push({
+      savedCashier = {
         id: cashier.id || Date.now(),
         tenant_id: cashier.tenant_id || 1,
         name_ar: cashier.name_ar,
@@ -1042,11 +1073,14 @@ export class LocalSaaSStorage {
           supervisor_pin: cashier.permissions?.supervisor_pin || '1234'
         },
         created_at: new Date().toISOString()
-      });
+      };
+      list.push(savedCashier);
     }
     this.set('cashiers', list);
-    window.dispatchEvent(new CustomEvent('suwayan_cashiers_updated', { detail: list }));
-    return list;
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('suwayan_cashiers_updated', { detail: list }));
+    }
+    return savedCashier;
   }
 
   static updateCashierPermissions(cashierId, permissions) {
@@ -1055,7 +1089,9 @@ export class LocalSaaSStorage {
     if (idx !== -1) {
       list[idx].permissions = { ...list[idx].permissions, ...permissions };
       this.set('cashiers', list);
-      window.dispatchEvent(new CustomEvent('suwayan_cashiers_updated', { detail: list }));
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('suwayan_cashiers_updated', { detail: list }));
+      }
       return list[idx];
     }
     return null;
@@ -1065,7 +1101,9 @@ export class LocalSaaSStorage {
     let list = this.getCashiers('all');
     list = list.filter(c => c.id != cashierId && c.username != cashierId);
     this.set('cashiers', list);
-    window.dispatchEvent(new CustomEvent('suwayan_cashiers_updated', { detail: list }));
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('suwayan_cashiers_updated', { detail: list }));
+    }
     return true;
   }
 }
@@ -2357,6 +2395,8 @@ function handleLocalFallback(url, options, tenantId) {
       };
     }
     return { success: true, data: LocalSaaSStorage.getCentralProducts() };
+  }
+
   // 21.0 إدارة حسابات الكاشيرية وتوليد الحسابات بالفروع (Cashier Accounts & Permissions)
   if (path.startsWith('/api/cashiers')) {
     if (options.method === 'POST') {
