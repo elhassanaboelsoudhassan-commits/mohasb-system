@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { safeFetch } from '../api/client';
 import { saveExpenseToFirebase, savePurchaseToFirebase } from '../firebase';
-import { t } from '../i18n';
+import { t } from '../i18n.jsx';
 
 export default function CashierBranchExpenseModal({
   currentBranch,

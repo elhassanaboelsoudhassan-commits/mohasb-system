@@ -24,7 +24,7 @@ import {
   Receipt,
   X
 } from 'lucide-react';
-import { t } from '../i18n';
+import { t } from '../i18n.jsx';
 
 export default function Sidebar({ 
   activeTab, 

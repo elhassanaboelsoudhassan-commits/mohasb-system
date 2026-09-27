@@ -34,7 +34,7 @@ import CashierControlPanel from './components/CashierControlPanel';
 import CashierPersonalReportView from './components/CashierPersonalReportView';
 import AiAssistantWidget from './components/AiAssistantWidget';
 import { CheckCircle2, X } from 'lucide-react';
-import { t } from './i18n';
+import { t } from './i18n.jsx';
 import { initializeAllFirestoreCollections, fetchFirebaseCompanies, fetchFirebaseBranches } from './firebase';
 import { safeFetch, LocalSaaSStorage } from './api/client';
 

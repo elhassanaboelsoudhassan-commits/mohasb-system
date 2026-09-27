@@ -19,7 +19,7 @@ import {
   Smartphone,
   PhoneCall
 } from 'lucide-react';
-import { translations } from '../i18n';
+import { translations } from '../i18n.jsx';
 import { safeFetch } from '../api/client';
 import { saveCompanyToFirebase, saveAuthUserToFirebase } from '../firebase';
 

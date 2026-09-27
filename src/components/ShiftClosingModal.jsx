@@ -19,7 +19,7 @@ import {
 import { safeFetch } from '../api/client';
 import { saveShiftToFirebase } from '../firebase';
 import { generateZatcaPhase2QR } from '../utils/zatcaPhase2';
-import { t } from '../i18n';
+import { t } from '../i18n.jsx';
 
 export default function ShiftClosingModal({
   currentBranch,
