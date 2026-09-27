@@ -133,6 +133,8 @@ const SEED_PRODUCTS = [
   {
     id: 1,
     tenant_id: 1,
+    branch_id: 1,
+    branch_stock: { '1': 45, '2': 20, '3': 0 },
     sku: 'PLANT-PET-01',
     barcode: '628100100001',
     name_ar: 'شتلة بتونيا هولندية مزهرة ألوان مشكلة',
@@ -142,12 +144,14 @@ const SEED_PRODUCTS = [
     cost_price: 15.00,
     retail_price: 35.00,
     wholesale_price: 25.00,
-    stock: 45,
+    stock: 65,
     min_limit: 10
   },
   {
     id: 2,
     tenant_id: 1,
+    branch_id: 1,
+    branch_stock: { '1': 8, '2': 15, '3': 0 },
     sku: 'TREE-OLV-02',
     barcode: '628100100002',
     name_ar: 'شجرة زيتون نبالي محسنة (عمر سنتين)',
@@ -157,12 +161,14 @@ const SEED_PRODUCTS = [
     cost_price: 90.00,
     retail_price: 180.00,
     wholesale_price: 140.00,
-    stock: 8, // صنف منخفض المخزون للتنبيه
+    stock: 23,
     min_limit: 15
   },
   {
     id: 3,
     tenant_id: 1,
+    branch_id: 1,
+    branch_stock: { '1': 5, '2': 0, '3': 0 },
     sku: 'FERT-NPK-03',
     barcode: '628100100003',
     name_ar: 'سماد مركب NPK ذواب 20-20-20 (كيس 25 كجم)',
@@ -172,12 +178,14 @@ const SEED_PRODUCTS = [
     cost_price: 130.00,
     retail_price: 220.00,
     wholesale_price: 185.00,
-    stock: 5, // صنف منخفض المخزون للتنبيه
+    stock: 5,
     min_limit: 10
   },
   {
     id: 4,
     tenant_id: 1,
+    branch_id: 1,
+    branch_stock: { '1': 35, '2': 10, '3': 0 },
     sku: 'SOIL-PEAT-04',
     barcode: '628100100004',
     name_ar: 'تربة بيتموس ألماني ممتاز للزراعة (300 لتر)',
@@ -187,12 +195,14 @@ const SEED_PRODUCTS = [
     cost_price: 65.00,
     retail_price: 110.00,
     wholesale_price: 88.00,
-    stock: 35,
+    stock: 45,
     min_limit: 10
   },
   {
     id: 5,
     tenant_id: 1,
+    branch_id: 1,
+    branch_stock: { '1': 0, '2': 12, '3': 0 }, // Out of stock in Branch 1 (0) - Sale will be blocked!
     sku: 'TREE-FIC-05',
     barcode: '628100100005',
     name_ar: 'شجرة فيكس بنجالي مظلية فاخرة',
@@ -202,7 +212,7 @@ const SEED_PRODUCTS = [
     cost_price: 120.00,
     retail_price: 260.00,
     wholesale_price: 210.00,
-    stock: 4, // صنف منخفض المخزون للتنبيه
+    stock: 12,
     min_limit: 8
   }
 ];
@@ -731,15 +741,35 @@ export class LocalSaaSStorage {
     return tenants[tIndex] || profileData;
   }
 
-  static getProducts(tenantId = 1) {
+  static getProducts(tenantId = 1, branchId = null) {
     const list = this.get('products', SEED_PRODUCTS);
     const central = this.getCentralProducts();
     const merged = [...list.filter(p => p.tenant_id == tenantId)];
     for (const cp of central) {
       if (!merged.find(m => m.barcode === cp.barcode || m.sku === cp.sku)) {
-        merged.push({ ...cp, tenant_id: tenantId, stock: cp.stock || 50 });
+        merged.push({ 
+          ...cp, 
+          tenant_id: tenantId, 
+          stock: cp.stock || 50,
+          branch_stock: { '1': cp.stock || 50, '2': 20, '3': 0 } 
+        });
       }
     }
+    // تهيئة مخزون الفروع المنفصل والمستقل لكل صنف
+    merged.forEach(p => {
+      if (!p.branch_stock) {
+        p.branch_stock = {
+          '1': p.stock || 30,
+          '2': Math.max(0, Math.floor((p.stock || 30) * 0.5)),
+          '3': 0
+        };
+      }
+      if (branchId && branchId !== 'all') {
+        const bId = String(branchId);
+        p.current_branch_id = bId;
+        p.stock = p.branch_stock[bId] !== undefined ? p.branch_stock[bId] : 0;
+      }
+    });
     return merged;
   }
 
@@ -890,6 +920,22 @@ export class LocalSaaSStorage {
       }
     ]);
     return list.filter(e => e.tenant_id == tenantId);
+  }
+
+  static saveExpense(expense) {
+    const list = this.get('expenses', []);
+    list.unshift(expense);
+    this.set('expenses', list);
+    window.dispatchEvent(new CustomEvent('suwayan_expense_added', { detail: expense }));
+    return expense;
+  }
+
+  static savePurchaseInvoice(purchase) {
+    const list = this.get('purchase_invoices', []);
+    list.unshift(purchase);
+    this.set('purchase_invoices', list);
+    window.dispatchEvent(new CustomEvent('suwayan_purchase_added', { detail: purchase }));
+    return purchase;
   }
 
   static resetToDemoData() {
@@ -1696,7 +1742,9 @@ function handleLocalFallback(url, options, tenantId) {
 
   // 5. المنتجات والأصناف الزراعية
   if (path.includes('/api/products') || path.includes('/api/inventory/products')) {
-    const products = LocalSaaSStorage.getProducts(tenantId);
+    const searchParams = url.includes('?') ? new URLSearchParams(url.split('?')[1]) : new URLSearchParams();
+    const branchId = searchParams.get('branchId') || searchParams.get('branch_id');
+    const products = LocalSaaSStorage.getProducts(tenantId, branchId);
     return { success: true, data: products };
   }
 
@@ -1704,13 +1752,39 @@ function handleLocalFallback(url, options, tenantId) {
   if (path.includes('/api/invoices') && method === 'POST') {
     const products = LocalSaaSStorage.getProducts(tenantId);
     const items = body.items || [];
+    const branchId = String(body.branch_id || '1');
     let subtotal = 0;
 
-    // خصم المخزون اللحظي
+    // ⚡ جرد المخازن المنفصلة للفروع وحظر البيع إذا أصبحت الكمية صفر
+    for (const it of items) {
+      const p = products.find(prod => prod.id == it.product_id || prod.barcode === it.barcode);
+      if (!p) continue;
+      if (!p.branch_stock) {
+        p.branch_stock = { '1': p.stock || 0, '2': 0, '3': 0 };
+      }
+      const branchQty = p.branch_stock[branchId] !== undefined ? p.branch_stock[branchId] : (p.branch_id == branchId ? p.stock : 0);
+      if (branchQty <= 0) {
+        return {
+          success: false,
+          error: `حظر البيع: الصنف "${p.name_ar}" غير متوفر في مستودع هذا الفرع (الرصيد: 0)`
+        };
+      }
+      if (branchQty < (it.quantity || 1)) {
+        return {
+          success: false,
+          error: `الكمية المطلوبة من "${p.name_ar}" (${it.quantity}) تتجاوز الرصيد المتوفر في مستودع هذا الفرع (${branchQty})`
+        };
+      }
+    }
+
+    // خصم المخزون اللحظي من مستودع الفرع البائع فقط
     items.forEach(it => {
-      const p = products.find(prod => prod.id == it.product_id);
+      const p = products.find(prod => prod.id == it.product_id || prod.barcode === it.barcode);
       if (p) {
-        p.stock = Math.max(0, (p.stock || 0) - (it.quantity || 1));
+        if (!p.branch_stock) p.branch_stock = { '1': p.stock || 0, '2': 0, '3': 0 };
+        const currentBranchQty = p.branch_stock[branchId] !== undefined ? p.branch_stock[branchId] : (p.stock || 0);
+        p.branch_stock[branchId] = Math.max(0, currentBranchQty - (it.quantity || 1));
+        p.stock = Object.values(p.branch_stock).reduce((a, b) => a + Number(b || 0), 0);
       }
       subtotal += (it.quantity || 1) * (it.unit_price || 0);
     });
@@ -2300,30 +2374,175 @@ function handleLocalFallback(url, options, tenantId) {
 
   if (path.includes('/api/pos/shifts/close') && method === 'POST') {
     const shifts = LocalSaaSStorage.getShifts(tenantId);
-    const active = shifts.find(s => s.status === 'open');
-    if (active) {
-      active.status = 'closed';
-      active.closed_at = new Date().toISOString();
-      active.actual_cash = Number(body.actual_cash || 0);
-      active.difference = Number(active.actual_cash - active.expected_cash);
-      LocalSaaSStorage.set('shifts', shifts);
+    let active = shifts.find(s => s.status === 'open');
+    const zRepNum = `ZREP-2026-${String(shifts.length + 1).padStart(4, '0')}`;
+    const nowIso = new Date().toISOString();
+    
+    if (!active) {
+      active = {
+        id: Date.now(),
+        tenant_id: tenantId,
+        branch_id: Number(body.branch_id || 1),
+        shift_number: zRepNum,
+        created_at: nowIso,
+        opened_at: body.opened_at || new Date(Date.now() - 8 * 3600000).toISOString()
+      };
+      shifts.unshift(active);
     }
+    
+    active.status = 'closed';
+    active.z_report_number = zRepNum;
+    active.closed_at = nowIso;
+    active.branch_id = Number(body.branch_id || active.branch_id || 1);
+    active.branch_name = body.branch_name || active.branch_name || 'الفرع الرئيسي';
+    active.cashier_id = body.cashier_id || active.cashier_id;
+    active.cashier_name = body.cashier_name || active.cashier_name || 'كاشير الفرع';
+    active.total_sales = Number(body.total_sales || active.total_sales || 0);
+    active.cash_sales = Number(body.cash_sales || active.cash_sales || 0);
+    active.card_sales = Number(body.card_sales || active.card_sales || 0);
+    active.credit_sales = Number(body.credit_sales || 0);
+    active.vat_total = Number(body.vat_total || 0);
+    active.invoices_count = Number(body.invoices_count || 0);
+    active.opening_balance = Number(body.opening_balance || active.opening_balance || 0);
+    active.cash_expenses = Number(body.cash_expenses || 0);
+    active.expected_cash = Number(body.expected_cash || active.expected_cash || 0);
+    active.actual_cash = Number(body.actual_cash || 0);
+    active.difference = Number((active.actual_cash - active.expected_cash).toFixed(2));
+    active.notes = body.notes || 'إغلاق الوردية وتصفية الصندوق Z-Report';
+
+    LocalSaaSStorage.set('shifts', shifts);
+    try {
+      saveShiftToFirebase(active).catch(e => console.warn('Firebase save shift notice:', e));
+    } catch (e) {}
+
     return {
       success: true,
-      message: '✅ تم إغلاق الوردية بنجاح وجرد الخزينة والصندوق',
+      message: `✅ تم إغلاق الصندوق والوردية برقم تقرير Z-Report (${zRepNum}) وإرساله للإدارة المركزية`,
       shift: active,
+      z_report: active,
       summary: {
-        opening_balance: active?.opening_balance || 0,
-        expected_cash: active?.expected_cash || 0,
-        actual_cash: Number(body.actual_cash || 0),
-        difference: Number((Number(body.actual_cash || 0) - (active?.expected_cash || 0)).toFixed(2)),
-        variance_status: 'مطابق وجاهز للترحيل'
+        z_report_number: zRepNum,
+        opening_balance: active.opening_balance,
+        total_sales: active.total_sales,
+        cash_sales: active.cash_sales,
+        card_sales: active.card_sales,
+        expected_cash: active.expected_cash,
+        actual_cash: active.actual_cash,
+        difference: active.difference,
+        variance_status: active.difference === 0 ? 'مطابق تماماً' : (active.difference > 0 ? `فائض نقدي (+${active.difference})` : `عجز نقدي (${active.difference})`)
       }
     };
   }
 
   if (path.includes('/api/pos/shifts')) {
     return { success: true, data: LocalSaaSStorage.getShifts(tenantId) };
+  }
+
+  // 19.1 مصروفات الفروع اليومية وتسجيل الكاشير
+  if (path.includes('/api/expenses')) {
+    if (method === 'POST') {
+      const expenses = LocalSaaSStorage.getExpenses(tenantId);
+      const count = expenses.length + 1;
+      const num = `EXP-2026-${String(count).padStart(4, '0')}`;
+      const amount = Number(body.amount || 0);
+      const vatAmount = Number(body.vat_amount || (amount * 0.15).toFixed(2));
+      const newExpense = {
+        id: Date.now(),
+        tenant_id: tenantId,
+        branch_id: Number(body.branch_id || 1),
+        branch_name: body.branch_name || 'الفرع الرئيسي',
+        cashier_id: body.cashier_id || null,
+        cashier_name: body.cashier_name || 'الكاشير',
+        expense_number: num,
+        category: body.category || 'مصروفات تشغيلية ونثريات',
+        amount: amount,
+        vat_amount: vatAmount,
+        grand_total: Number((amount + vatAmount).toFixed(2)),
+        payment_method: body.payment_method || 'cash_drawer',
+        receipt_ref: body.receipt_ref || '',
+        payee: body.payee || body.supplier_name || '',
+        description: body.description || body.notes || 'مصروف تشغيلي للفرع',
+        date: body.date || new Date().toISOString().split('T')[0],
+        created_at: new Date().toISOString()
+      };
+      LocalSaaSStorage.saveExpense(newExpense);
+      try {
+        saveExpenseToFirebase(newExpense).catch(e => console.warn('Firebase save expense notice:', e));
+      } catch (e) {}
+
+      return {
+        success: true,
+        message: `✅ تم تسجيل المصروف رقم (${num}) بقيمة ${newExpense.grand_total} ر.س وخصمه من أرباح الفرع بنجاح`,
+        data: newExpense
+      };
+    }
+    const searchParams = url.includes('?') ? new URLSearchParams(url.split('?')[1]) : new URLSearchParams();
+    const branchId = searchParams.get('branchId') || searchParams.get('branch_id');
+    let list = LocalSaaSStorage.getExpenses(tenantId);
+    if (branchId && branchId !== 'all') {
+      list = list.filter(e => String(e.branch_id) === String(branchId));
+    }
+    return { success: true, data: list };
+  }
+
+  // 19.2 مشتريات البضاعة والشتلات للفرع
+  if (path.includes('/api/purchases')) {
+    if (method === 'POST') {
+      const purchases = LocalSaaSStorage.getPurchaseInvoices(tenantId);
+      const count = purchases.length + 1;
+      const num = `BILL-2026-${String(count).padStart(4, '0')}`;
+      const subtotal = Number(body.subtotal || body.amount || 0);
+      const vatTotal = Number(body.vat_total || (subtotal * 0.15).toFixed(2));
+      const grandTotal = Number((subtotal + vatTotal).toFixed(2));
+      const newPurchase = {
+        id: Date.now(),
+        tenant_id: tenantId,
+        branch_id: Number(body.branch_id || 1),
+        branch_name: body.branch_name || 'الفرع الرئيسي',
+        cashier_id: body.cashier_id || null,
+        invoice_number: num,
+        supplier_name: body.supplier_name || 'مورد بضاعة زراعية',
+        subtotal: subtotal,
+        vat_total: vatTotal,
+        grand_total: grandTotal,
+        payment_status: 'paid',
+        payment_method: body.payment_method || 'cash_drawer',
+        invoice_date: body.date || new Date().toISOString().split('T')[0],
+        items: body.items || [{ item_name: body.description || 'مشتريات بضاعة للفرع', quantity: 1, unit_price: subtotal }],
+        notes: body.notes || 'مشتريات بضاعة للفرع',
+        created_at: new Date().toISOString()
+      };
+      LocalSaaSStorage.savePurchaseInvoice(newPurchase);
+      try {
+        savePurchaseToFirebase(newPurchase).catch(e => console.warn('Firebase save purchase notice:', e));
+      } catch (e) {}
+
+      // إذا كانت مشتريات لأصناف محددة، نزود رصيد الصنف بمستودع الفرع!
+      if (body.product_id) {
+        const products = LocalSaaSStorage.getProducts(tenantId);
+        const prod = products.find(p => p.id == body.product_id);
+        if (prod) {
+          const bId = String(body.branch_id || '1');
+          if (!prod.branch_stock) prod.branch_stock = { [bId]: prod.stock || 0 };
+          prod.branch_stock[bId] = (Number(prod.branch_stock[bId]) || 0) + (Number(body.quantity) || 1);
+          prod.stock = Object.values(prod.branch_stock).reduce((a, b) => a + Number(b || 0), 0);
+          LocalSaaSStorage.set('products', products);
+        }
+      }
+
+      return {
+        success: true,
+        message: `✅ تم تسجيل فاتورة المشتريات رقم (${num}) بقيمة ${grandTotal} ر.س وإضافتها لحسابات الفرع`,
+        data: newPurchase
+      };
+    }
+    const searchParams = url.includes('?') ? new URLSearchParams(url.split('?')[1]) : new URLSearchParams();
+    const branchId = searchParams.get('branchId') || searchParams.get('branch_id');
+    let list = LocalSaaSStorage.getPurchaseInvoices(tenantId);
+    if (branchId && branchId !== 'all') {
+      list = list.filter(p => String(p.branch_id) === String(branchId));
+    }
+    return { success: true, data: list };
   }
 
   // 20. السندات المالية (سندات القبض والصرف)

@@ -39,7 +39,9 @@ export const COLLECTIONS = {
   TENANTS: 'tenants',                 // مجموعة المستأجرين المتزامنة
   LOGIN_ACTIVITIES: 'login_activities', // جدول مراقبة حركات تسجيل الدخول الحية
   SETTINGS: 'system_settings',        // إعدادات النظام وصلاحيات الكاشير
-  CASHIERS: 'cashiers'                // جدول حسابات وصلاحيات الكاشيرية المتعددين بالفروع
+  CASHIERS: 'cashiers',               // جدول حسابات وصلاحيات الكاشيرية المتعددين بالفروع
+  EXPENSES: 'expenses',               // جدول مصروفات الفروع اليومية
+  PURCHASES: 'purchases'              // جدول مشتريات البضاعة والشتلات للفرع
 };
 
 export const USERS_COLLECTION = COLLECTIONS.USERS;
@@ -51,6 +53,8 @@ export const TENANTS_COLLECTION = COLLECTIONS.TENANTS;
 export const LOGIN_ACTIVITIES_COLLECTION = COLLECTIONS.LOGIN_ACTIVITIES;
 export const SETTINGS_COLLECTION = COLLECTIONS.SETTINGS;
 export const CASHIERS_COLLECTION = COLLECTIONS.CASHIERS;
+export const EXPENSES_COLLECTION = COLLECTIONS.EXPENSES;
+export const PURCHASES_COLLECTION = COLLECTIONS.PURCHASES;
 
 // =========================================================================
 // 1. إدارة جدول الشركات والمشتركين والعملاء الجدد (users collection)
@@ -935,6 +939,114 @@ export function subscribeToLiveShifts(callback) {
   }
 }
 
+/**
+ * استخراج كافة تقارير إغلاق الورديات السحابية (Z-Reports)
+ */
+export async function fetchFirebaseShifts(branchId = 'all') {
+  try {
+    const snap = await getDocs(collection(db, SHIFTS_COLLECTION));
+    const list = [];
+    snap.forEach(docSnap => {
+      const data = docSnap.data();
+      if (branchId !== 'all' && String(data.branch_id) !== String(branchId)) return;
+      list.push({ id: docSnap.id, ...data });
+    });
+    list.sort((a, b) => new Date(b.closed_at || b.created_at || 0) - new Date(a.closed_at || a.created_at || 0));
+    return list;
+  } catch (error) {
+    console.warn('Firebase fetch shifts error:', error);
+    return [];
+  }
+}
+
+/**
+ * حفظ مصروف تشغيلي للفرع في Firebase Firestore
+ */
+export async function saveExpenseToFirebase(expenseData) {
+  try {
+    const col = collection(db, EXPENSES_COLLECTION);
+    const docData = {
+      ...expenseData,
+      amount: Number(expenseData.amount || 0),
+      vat_amount: Number(expenseData.vat_amount || 0),
+      created_at: new Date().toISOString(),
+      firestore_timestamp: serverTimestamp()
+    };
+    const res = await addDoc(col, docData);
+    return { success: true, id: res.id };
+  } catch (error) {
+    console.error('Firebase save expense error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * جلب مصروفات الفرع من Firestore
+ */
+export async function fetchFirebaseExpenses(branchId = 'all') {
+  try {
+    const snap = await getDocs(collection(db, EXPENSES_COLLECTION));
+    const list = [];
+    snap.forEach(docSnap => {
+      const data = docSnap.data();
+      if (branchId !== 'all' && String(data.branch_id) !== String(branchId)) return;
+      list.push({ id: docSnap.id, ...data });
+    });
+    list.sort((a, b) => new Date(b.date || b.created_at || 0) - new Date(a.date || a.created_at || 0));
+    return list;
+  } catch (error) {
+    console.warn('Firebase fetch expenses error:', error);
+    return [];
+  }
+}
+
+/**
+ * حفظ فاتورة مشتريات بضاعة للفرع في Firestore
+ */
+export async function savePurchaseToFirebase(purchaseData) {
+  try {
+    const col = collection(db, PURCHASES_COLLECTION);
+    const docData = {
+      ...purchaseData,
+      subtotal: Number(purchaseData.subtotal || 0),
+      vat_total: Number(purchaseData.vat_total || 0),
+      grand_total: Number(purchaseData.grand_total || 0),
+      created_at: new Date().toISOString(),
+      firestore_timestamp: serverTimestamp()
+    };
+    const res = await addDoc(col, docData);
+    return { success: true, id: res.id };
+  } catch (error) {
+    console.error('Firebase save purchase error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * تعديل مخزون فرع معين لصنف محدد في Firestore مع حظر البيع عند الصفر
+ */
+export async function updateProductBranchStockInFirebase(productId, branchId, newStock, reason = 'تعديل جرد الفرع') {
+  try {
+    const docRef = doc(db, PRODUCTS_COLLECTION, String(productId));
+    const bId = String(branchId || '1');
+    const updateData = {
+      [`branch_stock.${bId}`]: Number(newStock),
+      last_adjustment: {
+        branch_id: bId,
+        adjusted_to: Number(newStock),
+        reason,
+        adjusted_at: new Date().toISOString()
+      },
+      updated_at: new Date().toISOString()
+    };
+    await setDoc(docRef, updateData, { merge: true });
+    return { success: true };
+  } catch (error) {
+    console.error('Firebase update branch stock error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // =========================================================================
 // 5. التأسيس البرمجي التلقائي لكافة الجداول في Firestore (Auto-Seeding)
 // =========================================================================
@@ -1007,6 +1119,7 @@ export async function initializeAllFirestoreCollections() {
             cost_price: 32.0,
             stock: 450,
             branch_id: 1,
+            branch_stock: { '1': 300, '2': 150, '3': 0 },
             created_at: new Date().toISOString()
           },
           {
@@ -1020,6 +1133,7 @@ export async function initializeAllFirestoreCollections() {
             cost_price: 140.0,
             stock: 120,
             branch_id: 1,
+            branch_stock: { '1': 80, '2': 40, '3': 0 },
             created_at: new Date().toISOString()
           },
           {
@@ -1033,6 +1147,7 @@ export async function initializeAllFirestoreCollections() {
             cost_price: 16.0,
             stock: 310,
             branch_id: 2,
+            branch_stock: { '1': 110, '2': 200, '3': 0 },
             created_at: new Date().toISOString()
           },
           {
@@ -1046,6 +1161,21 @@ export async function initializeAllFirestoreCollections() {
             cost_price: 52.0,
             stock: 180,
             branch_id: 1,
+            branch_stock: { '1': 120, '2': 60, '3': 0 },
+            created_at: new Date().toISOString()
+          },
+          {
+            code: 'TREE-FIC-05',
+            barcode: '628100100005',
+            name_ar: 'شجرة فيكس بنجالي مظلية فاخرة',
+            name_en: 'Ficus Benghalensis Shade Tree',
+            category: 'أشجار ظل وزينة',
+            unit: 'شجرة',
+            sale_price: 260.0,
+            cost_price: 120.0,
+            stock: 15,
+            branch_id: 1,
+            branch_stock: { '1': 0, '2': 15, '3': 0 },
             created_at: new Date().toISOString()
           }
         ];
