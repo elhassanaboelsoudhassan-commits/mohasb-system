@@ -35,8 +35,8 @@ import CashierPersonalReportView from './components/CashierPersonalReportView';
 import AiAssistantWidget from './components/AiAssistantWidget';
 import { CheckCircle2, X } from 'lucide-react';
 import { t } from './i18n';
-import { safeFetch } from './api/client';
-import { initializeAllFirestoreCollections } from './firebase';
+import { initializeAllFirestoreCollections, fetchFirebaseCompanies, fetchFirebaseBranches } from './firebase';
+import { safeFetch, LocalSaaSStorage } from './api/client';
 
 export default function App() {
   // Mobile drawer state
@@ -47,6 +47,24 @@ export default function App() {
     initializeAllFirestoreCollections().catch(err => {
       console.warn('Firestore collections init notice:', err);
     });
+    
+    // Fetch core data to prevent F5 flickering
+    const fetchCoreData = async () => {
+      try {
+        const companies = await fetchFirebaseCompanies();
+        if (companies && companies.length > 0) {
+          LocalSaaSStorage.set('tenants', companies);
+          LocalSaaSStorage.set('users', companies);
+        }
+        const branches = await fetchFirebaseBranches();
+        if (branches && branches.length > 0) {
+          LocalSaaSStorage.set('branches', branches);
+        }
+      } catch (err) {
+        console.warn('Core data fetch notice:', err);
+      }
+    };
+    fetchCoreData();
   }, []);
 
   // Auth & Tenant States
