@@ -77,6 +77,11 @@ export default function CashierMySalesModal({
       const first = new Date(curr.getFullYear(), curr.getMonth(), 1).toISOString().split('T')[0];
       setFromDate(first);
       setToDate(today);
+    } else if (preset === 'last_month') {
+      const firstLastMonth = new Date(curr.getFullYear(), curr.getMonth() - 1, 1).toISOString().split('T')[0];
+      const lastDayLastMonth = new Date(curr.getFullYear(), curr.getMonth(), 0).toISOString().split('T')[0];
+      setFromDate(firstLastMonth);
+      setToDate(lastDayLastMonth);
     } else if (preset === 'all') {
       setFromDate('2024-01-01');
       setToDate(today);
@@ -87,7 +92,8 @@ export default function CashierMySalesModal({
     setLoading(true);
     try {
       const cashierId = currentUser?.id || currentUser?.username || '1';
-      const url = `/api/cashier/my-sales?cashierId=${encodeURIComponent(cashierId)}&fromDate=${fromDate}&toDate=${toDate}`;
+      const cashierName = currentUser?.name || currentUser?.name_ar || currentUser?.user_name || '';
+      const url = `/api/cashier/my-sales?cashierId=${encodeURIComponent(cashierId)}&cashierName=${encodeURIComponent(cashierName)}&fromDate=${fromDate}&toDate=${toDate}`;
       const res = await safeFetch(url);
       if (res && res.success && res.data) {
         setSalesData(res.data);
@@ -220,10 +226,11 @@ export default function CashierMySalesModal({
               </div>
               <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
                 {[
-                  { id: 'today', label: 'اليوم' },
+                  { id: 'today', label: 'اليوم (Daily)' },
                   { id: 'yesterday', label: 'أمس' },
                   { id: 'last_7_days', label: 'آخر 7 أيام' },
-                  { id: 'this_month', label: 'هذا الشهر' },
+                  { id: 'this_month', label: 'هذا الشهر (Monthly)' },
+                  { id: 'last_month', label: 'الشهر الماضي' },
                   { id: 'all', label: 'جميع مبيعاتي' }
                 ].map(p => (
                   <button

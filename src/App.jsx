@@ -31,6 +31,7 @@ import CashierPermissionsModal from './components/CashierPermissionsModal';
 import PaymentGatewaysView from './components/PaymentGatewaysView';
 import SmartMobileInventoryAudit from './components/SmartMobileInventoryAudit';
 import CashierControlPanel from './components/CashierControlPanel';
+import CashierPersonalReportView from './components/CashierPersonalReportView';
 import AiAssistantWidget from './components/AiAssistantWidget';
 import { CheckCircle2, X } from 'lucide-react';
 import { t } from './i18n';
@@ -401,6 +402,15 @@ export default function App() {
               contacts={contacts}
               onSaleCompleted={refreshAll}
               onSaleSuccess={refreshAll}
+            />
+          )}
+
+          {/* Cashier Personal Sales & Shift Report (Locked to Cashier with Date Filters) */}
+          {activeTab === 'cashier_my_reports' && (
+            <CashierPersonalReportView 
+              currentUser={currentUser}
+              currentTenant={currentTenant}
+              branches={branches}
             />
           )}
 

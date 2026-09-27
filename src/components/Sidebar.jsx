@@ -21,6 +21,7 @@ import {
   LifeBuoy,
   Truck,
   CreditCard,
+  Receipt,
   X
 } from 'lucide-react';
 import { t } from '../i18n';
@@ -45,6 +46,7 @@ export default function Sidebar({
     { id: 'dashboard', label: t('dashboard', lang), icon: LayoutDashboard, showForCashier: false },
     { id: 'touch_pos', label: 'كاشير اللمس الذكي', icon: Smartphone, badge: 'لمس سريع', showForCashier: true },
     { id: 'cashier_pos', label: t('cashier_pos', lang), icon: ShoppingBag, badge: 'POS', showForCashier: true },
+    { id: 'cashier_my_reports', label: '📊 تقرير مبيعاتي الشخصية', icon: Receipt, badge: 'بالتواريخ', showForCashier: true },
     { id: 'branches', label: 'إدارة الفروع والمخازن', icon: Building, badge: 'فروع', showForCashier: false },
     { id: 'transfers', label: 'التحويل المخزني والشحنات', icon: Truck, badge: 'شحنات', showForCashier: true },
     { id: 'vouchers', label: 'السندات المالية (صرف وقبض)', icon: BookOpenCheck, badge: 'سندات', showForCashier: false },

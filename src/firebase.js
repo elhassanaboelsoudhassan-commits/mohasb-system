@@ -38,7 +38,8 @@ export const COLLECTIONS = {
   SHIFTS: 'shifts',                   // جدول الورديات وإغلاق صناديق الكاشير
   TENANTS: 'tenants',                 // مجموعة المستأجرين المتزامنة
   LOGIN_ACTIVITIES: 'login_activities', // جدول مراقبة حركات تسجيل الدخول الحية
-  SETTINGS: 'system_settings'         // إعدادات النظام وصلاحيات الكاشير
+  SETTINGS: 'system_settings',        // إعدادات النظام وصلاحيات الكاشير
+  CASHIERS: 'cashiers'                // جدول حسابات وصلاحيات الكاشيرية المتعددين بالفروع
 };
 
 export const USERS_COLLECTION = COLLECTIONS.USERS;
@@ -49,6 +50,7 @@ export const SHIFTS_COLLECTION = COLLECTIONS.SHIFTS;
 export const TENANTS_COLLECTION = COLLECTIONS.TENANTS;
 export const LOGIN_ACTIVITIES_COLLECTION = COLLECTIONS.LOGIN_ACTIVITIES;
 export const SETTINGS_COLLECTION = COLLECTIONS.SETTINGS;
+export const CASHIERS_COLLECTION = COLLECTIONS.CASHIERS;
 
 // =========================================================================
 // 1. إدارة جدول الشركات والمشتركين والعملاء الجدد (users collection)
@@ -599,6 +601,128 @@ export async function fetchCashierPermissionsFromFirebase() {
 }
 
 // =========================================================================
+// 7. إدارة وتوليد حسابات وصلاحيات الكاشيرية بالفروع (cashiers collection)
+// =========================================================================
+
+/**
+ * حفظ أو تحديث حساب كاشير جديد مع كلمة المرور والفرع والصلاحيات في Firestore
+ */
+export async function saveCashierAccountToFirebase(cashierData) {
+  try {
+    const timestamp = serverTimestamp();
+    const cashierDoc = {
+      ...cashierData,
+      role: 'cashier',
+      name_ar: cashierData.name_ar || cashierData.name || 'كاشير جديد',
+      username: cashierData.username || `cashier_${Date.now()}`,
+      password: cashierData.password || '123456',
+      pin: cashierData.pin || '1234',
+      phone: cashierData.phone || '',
+      branch_id: Number(cashierData.branch_id || 1),
+      branch_name: cashierData.branch_name || 'الفرع الرئيسي',
+      status: cashierData.status || 'active', // 'active' or 'suspended'
+      shift_status: cashierData.shift_status || 'closed',
+      shift_sales: Number(cashierData.shift_sales || 0),
+      permissions: {
+        can_create_sales: cashierData.permissions?.can_create_sales !== false,
+        can_view_own_reports: cashierData.permissions?.can_view_own_reports !== false,
+        allow_discount: cashierData.permissions?.allow_discount !== false,
+        max_discount_percent: Number(cashierData.permissions?.max_discount_percent ?? 15),
+        allow_delete_items: cashierData.permissions?.allow_delete_items === true,
+        allow_price_override: cashierData.permissions?.allow_price_override === true,
+        allow_credit_sales: cashierData.permissions?.allow_credit_sales === true,
+        allow_reprint_invoice: cashierData.permissions?.allow_reprint_invoice !== false,
+        allow_shift_close: cashierData.permissions?.allow_shift_close !== false,
+        supervisor_pin: cashierData.permissions?.supervisor_pin || '1234'
+      },
+      updated_at: new Date().toISOString(),
+      firestore_timestamp: timestamp
+    };
+
+    if (cashierData.id && String(cashierData.id).length > 5) {
+      const docRef = doc(db, CASHIERS_COLLECTION, String(cashierData.id));
+      await setDoc(docRef, cashierDoc, { merge: true });
+      return { success: true, id: cashierData.id, ...cashierDoc };
+    } else {
+      cashierDoc.created_at = new Date().toISOString();
+      const colRef = collection(db, CASHIERS_COLLECTION);
+      const res = await addDoc(colRef, cashierDoc);
+      return { success: true, id: res.id, ...cashierDoc };
+    }
+  } catch (error) {
+    console.error('Firebase save cashier account error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * جلب جميع حسابات الكاشيرية والفروع من Firestore
+ */
+export async function fetchCashierAccountsFromFirebase() {
+  try {
+    const colRef = collection(db, CASHIERS_COLLECTION);
+    const snap = await getDocs(colRef);
+    const list = [];
+    snap.forEach(d => {
+      list.push({ id: d.id, ...d.data() });
+    });
+    return list;
+  } catch (error) {
+    console.warn('Firebase fetch cashiers warning:', error);
+    return [];
+  }
+}
+
+/**
+ * اشتراك حي ومباشر في جدول الكاشيرات (Real-time sync)
+ */
+export function subscribeToLiveCashiers(callback) {
+  try {
+    const colRef = collection(db, CASHIERS_COLLECTION);
+    return onSnapshot(colRef, (snapshot) => {
+      const list = [];
+      snapshot.forEach(d => {
+        list.push({ id: d.id, ...d.data() });
+      });
+      callback(list);
+    }, (err) => console.warn('Cashiers snapshot warning:', err));
+  } catch (e) {
+    return () => {};
+  }
+}
+
+/**
+ * تحديث صلاحيات كاشير محدد بشكل فوري
+ */
+export async function updateCashierPermissionsInFirebase(cashierId, permissions) {
+  try {
+    const docRef = doc(db, CASHIERS_COLLECTION, String(cashierId));
+    await setDoc(docRef, {
+      permissions,
+      updated_at: new Date().toISOString()
+    }, { merge: true });
+    return { success: true };
+  } catch (error) {
+    console.error('Firebase update cashier permissions error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * حذف أو إلغاء تفعيل حساب كاشير
+ */
+export async function deleteCashierAccountFromFirebase(cashierId) {
+  try {
+    const docRef = doc(db, CASHIERS_COLLECTION, String(cashierId));
+    await deleteDoc(docRef);
+    return { success: true };
+  } catch (error) {
+    console.error('Firebase delete cashier error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// =========================================================================
 // 4. إدارة الفروع والورديات (branches & shifts collections)
 // =========================================================================
 
@@ -977,6 +1101,95 @@ export async function initializeAllFirestoreCollections() {
       }
     } catch (e) {
       console.warn('Init sales notice:', e.message);
+    }
+
+    // 6. تأسيس جدول حسابات وصلاحيات الكاشيرية (cashiers)
+    try {
+      const cashiersSnap = await getDocs(collection(db, CASHIERS_COLLECTION));
+      if (cashiersSnap.empty) {
+        const seedCashiers = [
+          {
+            name_ar: 'محمد الشمري (كاشير صالة الرياض)',
+            username: 'cashier1',
+            password: '123',
+            pin: '1111',
+            phone: '0551122334',
+            branch_id: 1,
+            branch_name: 'مشتل وصالة الرياض الرئيسية',
+            status: 'active',
+            shift_status: 'open',
+            shift_sales: 1450.00,
+            permissions: {
+              can_create_sales: true,
+              can_view_own_reports: true,
+              allow_discount: true,
+              max_discount_percent: 10,
+              allow_delete_items: false,
+              allow_price_override: false,
+              allow_credit_sales: false,
+              allow_reprint_invoice: true,
+              allow_shift_close: true,
+              supervisor_pin: '1234'
+            },
+            created_at: new Date().toISOString()
+          },
+          {
+            name_ar: 'أحمد العتيبي (كاشير فرع الخرج)',
+            username: 'cashier2',
+            password: '123',
+            pin: '2222',
+            phone: '0555566778',
+            branch_id: 2,
+            branch_name: 'فرع ومشتل الخرج الزراعي',
+            status: 'active',
+            shift_status: 'closed',
+            shift_sales: 0.00,
+            permissions: {
+              can_create_sales: true,
+              can_view_own_reports: true,
+              allow_discount: false,
+              max_discount_percent: 0,
+              allow_delete_items: false,
+              allow_price_override: false,
+              allow_credit_sales: false,
+              allow_reprint_invoice: true,
+              allow_shift_close: true,
+              supervisor_pin: '1234'
+            },
+            created_at: new Date().toISOString()
+          },
+          {
+            name_ar: 'سلطان الغامدي (البيع السريع)',
+            username: 'cashier3',
+            password: '123',
+            pin: '3333',
+            phone: '0544998877',
+            branch_id: 1,
+            branch_name: 'مشتل وصالة الرياض الرئيسية',
+            status: 'active',
+            shift_status: 'open',
+            shift_sales: 890.00,
+            permissions: {
+              can_create_sales: true,
+              can_view_own_reports: true,
+              allow_discount: true,
+              max_discount_percent: 15,
+              allow_delete_items: true,
+              allow_price_override: false,
+              allow_credit_sales: true,
+              allow_reprint_invoice: true,
+              allow_shift_close: true,
+              supervisor_pin: '1234'
+            },
+            created_at: new Date().toISOString()
+          }
+        ];
+        for (const c of seedCashiers) {
+          await addDoc(collection(db, CASHIERS_COLLECTION), c);
+        }
+      }
+    } catch (e) {
+      console.warn('Init cashiers notice:', e.message);
     }
 
     return { success: true, message: 'Firebase collections initialized successfully' };

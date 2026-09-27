@@ -46,9 +46,14 @@ export default function CashierPosView({
   // Cashier Permissions State
   const [cashierPermissions, setCashierPermissions] = useState(() => {
     try {
+      const allCashiers = LocalSaaSStorage.getCashiers('all');
+      const found = allCashiers.find(c => c.id == currentUser?.id || c.username == currentUser?.username);
+      if (found && found.permissions) return found.permissions;
       return LocalSaaSStorage.getCashierPermissions();
     } catch {
       return {
+        can_create_sales: true,
+        can_view_own_reports: true,
         allow_discount: true,
         max_discount_percent: 15,
         allow_delete_items: true,
@@ -62,7 +67,7 @@ export default function CashierPosView({
   useEffect(() => {
     safeFetch('/api/cashier-permissions').then(res => {
       if (res && res.success && res.data) {
-        setCashierPermissions(res.data);
+        setCashierPermissions(prev => ({ ...prev, ...res.data }));
       }
     }).catch(() => {});
   }, []);

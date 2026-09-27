@@ -905,6 +905,8 @@ export class LocalSaaSStorage {
 
   static getCashierPermissions() {
     return this.get('cashier_permissions', {
+      can_create_sales: true,
+      can_view_own_reports: true,
       allow_discounts: true,
       allow_discount: true,
       max_discount_percent: 15,
@@ -921,6 +923,150 @@ export class LocalSaaSStorage {
   static setCashierPermissions(perms) {
     this.set('cashier_permissions', perms);
     window.dispatchEvent(new CustomEvent('suwayan_permissions_updated', { detail: perms }));
+  }
+
+  static getCashiers(tenantId = 1) {
+    const list = this.get('cashiers', [
+      {
+        id: 1,
+        tenant_id: 1,
+        name_ar: 'محمد الشمري (كاشير صالة الرياض)',
+        username: 'cashier1',
+        password: '123',
+        pin: '1111',
+        phone: '0551122334',
+        branch_id: 1,
+        branch_name: 'مشتل وصالة الرياض الرئيسية',
+        status: 'active',
+        shift_status: 'open',
+        shift_sales: 1450.00,
+        permissions: {
+          can_create_sales: true,
+          can_view_own_reports: true,
+          allow_discount: true,
+          max_discount_percent: 10,
+          allow_delete_items: false,
+          allow_price_override: false,
+          allow_credit_sales: false,
+          allow_reprint_invoice: true,
+          allow_shift_close: true,
+          supervisor_pin: '1234'
+        }
+      },
+      {
+        id: 2,
+        tenant_id: 1,
+        name_ar: 'أحمد العتيبي (كاشير فرع الخرج)',
+        username: 'cashier2',
+        password: '123',
+        pin: '2222',
+        phone: '0555566778',
+        branch_id: 2,
+        branch_name: 'فرع ومشتل الخرج الزراعي',
+        status: 'active',
+        shift_status: 'closed',
+        shift_sales: 0.00,
+        permissions: {
+          can_create_sales: true,
+          can_view_own_reports: true,
+          allow_discount: false,
+          max_discount_percent: 0,
+          allow_delete_items: false,
+          allow_price_override: false,
+          allow_credit_sales: false,
+          allow_reprint_invoice: true,
+          allow_shift_close: true,
+          supervisor_pin: '1234'
+        }
+      },
+      {
+        id: 3,
+        tenant_id: 1,
+        name_ar: 'سلطان الغامدي (البيع السريع)',
+        username: 'cashier3',
+        password: '123',
+        pin: '3333',
+        phone: '0544998877',
+        branch_id: 1,
+        branch_name: 'مشتل وصالة الرياض الرئيسية',
+        status: 'active',
+        shift_status: 'open',
+        shift_sales: 890.00,
+        permissions: {
+          can_create_sales: true,
+          can_view_own_reports: true,
+          allow_discount: true,
+          max_discount_percent: 15,
+          allow_delete_items: true,
+          allow_price_override: false,
+          allow_credit_sales: true,
+          allow_reprint_invoice: true,
+          allow_shift_close: true,
+          supervisor_pin: '1234'
+        }
+      }
+    ]);
+    if (!tenantId || tenantId === 'all') return list;
+    return list.filter(c => c.tenant_id == tenantId || !c.tenant_id);
+  }
+
+  static saveCashier(cashier) {
+    const list = this.getCashiers('all');
+    const idx = list.findIndex(c => c.id == cashier.id || (cashier.username && c.username === cashier.username));
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...cashier, updated_at: new Date().toISOString() };
+    } else {
+      list.push({
+        id: cashier.id || Date.now(),
+        tenant_id: cashier.tenant_id || 1,
+        name_ar: cashier.name_ar,
+        username: cashier.username,
+        password: cashier.password || '123456',
+        pin: cashier.pin || '1234',
+        phone: cashier.phone || '',
+        branch_id: Number(cashier.branch_id || 1),
+        branch_name: cashier.branch_name || 'الفرع الرئيسي',
+        status: cashier.status || 'active',
+        shift_status: cashier.shift_status || 'closed',
+        shift_sales: Number(cashier.shift_sales || 0),
+        permissions: {
+          can_create_sales: cashier.permissions?.can_create_sales !== false,
+          can_view_own_reports: cashier.permissions?.can_view_own_reports !== false,
+          allow_discount: cashier.permissions?.allow_discount !== false,
+          max_discount_percent: Number(cashier.permissions?.max_discount_percent ?? 15),
+          allow_delete_items: cashier.permissions?.allow_delete_items === true,
+          allow_price_override: cashier.permissions?.allow_price_override === true,
+          allow_credit_sales: cashier.permissions?.allow_credit_sales === true,
+          allow_reprint_invoice: cashier.permissions?.allow_reprint_invoice !== false,
+          allow_shift_close: cashier.permissions?.allow_shift_close !== false,
+          supervisor_pin: cashier.permissions?.supervisor_pin || '1234'
+        },
+        created_at: new Date().toISOString()
+      });
+    }
+    this.set('cashiers', list);
+    window.dispatchEvent(new CustomEvent('suwayan_cashiers_updated', { detail: list }));
+    return list;
+  }
+
+  static updateCashierPermissions(cashierId, permissions) {
+    const list = this.getCashiers('all');
+    const idx = list.findIndex(c => c.id == cashierId || c.username == cashierId);
+    if (idx !== -1) {
+      list[idx].permissions = { ...list[idx].permissions, ...permissions };
+      this.set('cashiers', list);
+      window.dispatchEvent(new CustomEvent('suwayan_cashiers_updated', { detail: list }));
+      return list[idx];
+    }
+    return null;
+  }
+
+  static deleteCashier(cashierId) {
+    let list = this.getCashiers('all');
+    list = list.filter(c => c.id != cashierId && c.username != cashierId);
+    this.set('cashiers', list);
+    window.dispatchEvent(new CustomEvent('suwayan_cashiers_updated', { detail: list }));
+    return true;
   }
 }
 
@@ -2211,6 +2357,26 @@ function handleLocalFallback(url, options, tenantId) {
       };
     }
     return { success: true, data: LocalSaaSStorage.getCentralProducts() };
+  // 21.0 إدارة حسابات الكاشيرية وتوليد الحسابات بالفروع (Cashier Accounts & Permissions)
+  if (path.startsWith('/api/cashiers')) {
+    if (options.method === 'POST') {
+      const body = typeof options.body === 'string' ? JSON.parse(options.body) : (options.body || {});
+      if (path.includes('/permissions')) {
+        const parts = path.split('/');
+        const id = parts[3];
+        const updated = LocalSaaSStorage.updateCashierPermissions(id, body);
+        return { success: true, message: 'تم تحديث صلاحيات الكاشير بنجاح', data: updated };
+      }
+      const saved = LocalSaaSStorage.saveCashier(body);
+      return { success: true, message: 'تم حفظ حساب الكاشير بنجاح', data: saved };
+    }
+    if (options.method === 'DELETE') {
+      const parts = path.split('/');
+      const id = parts[3];
+      LocalSaaSStorage.deleteCashier(id);
+      return { success: true, message: 'تم حذف حساب الكاشير بنجاح' };
+    }
+    return { success: true, data: LocalSaaSStorage.getCashiers(tenantId) };
   }
 
   // 21.1 مبيعات الكاشير الشخصية المحددة بالتواريخ (Personal Cashier Sales)
