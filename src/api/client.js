@@ -104,6 +104,41 @@ const SEED_USERS = [
   }
 ];
 
+const SEED_ACCOUNTS = [
+  // المستوى الأول (رئيسي)
+  { id: 1, code: '1', name_ar: 'الأصول', name_en: 'Assets', type: 'asset', category: 'main', parent_id: null, is_sub: 0 },
+  { id: 2, code: '2', name_ar: 'الخصوم', name_en: 'Liabilities', type: 'liability', category: 'main', parent_id: null, is_sub: 0 },
+  { id: 3, code: '3', name_ar: 'حقوق الملكية والإيرادات', name_en: 'Equity & Revenues', type: 'revenue', category: 'main', parent_id: null, is_sub: 0 },
+  { id: 4, code: '4', name_ar: 'المصروفات', name_en: 'Expenses', type: 'expense', category: 'main', parent_id: null, is_sub: 0 },
+  
+  // المستوى الثاني
+  { id: 11, code: '11', name_ar: 'الأصول المتداولة', name_en: 'Current Assets', type: 'asset', category: 'main', parent_id: 1, is_sub: 0 },
+  { id: 12, code: '12', name_ar: 'الأصول الثابتة', name_en: 'Fixed Assets', type: 'asset', category: 'main', parent_id: 1, is_sub: 0 },
+  { id: 21, code: '21', name_ar: 'الخصوم المتداولة', name_en: 'Current Liabilities', type: 'liability', category: 'main', parent_id: 2, is_sub: 0 },
+  { id: 22, code: '22', name_ar: 'الخصوم طويلة الأجل', name_en: 'Long-term Liabilities', type: 'liability', category: 'main', parent_id: 2, is_sub: 0 },
+  { id: 31, code: '31', name_ar: 'إيرادات المبيعات', name_en: 'Sales Revenues', type: 'revenue', category: 'main', parent_id: 3, is_sub: 0 },
+  { id: 41, code: '41', name_ar: 'تكلفة المبيعات', name_en: 'Cost of Sales', type: 'expense', category: 'main', parent_id: 4, is_sub: 0 },
+  { id: 42, code: '42', name_ar: 'مصروفات تشغيلية', name_en: 'Operating Expenses', type: 'expense', category: 'main', parent_id: 4, is_sub: 0 },
+  
+  // المستوى الثالث
+  { id: 111, code: '111', name_ar: 'النقدية وما في حكمها', name_en: 'Cash and Equivalents', type: 'asset', category: 'main', parent_id: 11, is_sub: 0 },
+  { id: 112, code: '112', name_ar: 'العملاء', name_en: 'Customers', type: 'asset', category: 'main', parent_id: 11, is_sub: 0 },
+  { id: 113, code: '113', name_ar: 'المخزون', name_en: 'Inventory', type: 'asset', category: 'main', parent_id: 11, is_sub: 0 },
+  { id: 211, code: '211', name_ar: 'الضرائب المستحقة', name_en: 'Taxes Payable', type: 'liability', category: 'main', parent_id: 21, is_sub: 0 },
+  
+  // المستوى الرابع (فرعي - حسابات تعامل)
+  { id: 1111, code: '1111', name_ar: 'الصندوق الرئيسي', name_en: 'Main Cash', type: 'asset', category: 'sub', parent_id: 111, is_sub: 1, balance: 0 },
+  { id: 1112, code: '1112', name_ar: 'البنك (الراجحي)', name_en: 'Al Rajhi Bank', type: 'asset', category: 'sub', parent_id: 111, is_sub: 1, balance: 0 },
+  { id: 1121, code: '1121', name_ar: 'عملاء الجملة', name_en: 'Wholesale Customers', type: 'asset', category: 'sub', parent_id: 112, is_sub: 1, balance: 0 },
+  { id: 1131, code: '1131', name_ar: 'مخزون الشتلات الزراعية', name_en: 'Seedlings Inventory', type: 'asset', category: 'sub', parent_id: 113, is_sub: 1, balance: 0 },
+  { id: 2111, code: '2111', name_ar: 'ضريبة القيمة المضافة المستحقة', name_en: 'VAT Payable', type: 'liability', category: 'sub', parent_id: 211, is_sub: 1, balance: 0 },
+  { id: 3111, code: '3111', name_ar: 'مبيعات التجزئة', name_en: 'Retail Sales', type: 'revenue', category: 'sub', parent_id: 31, is_sub: 1, balance: 0 },
+  { id: 3112, code: '3112', name_ar: 'مبيعات الجملة', name_en: 'Wholesale Sales', type: 'revenue', category: 'sub', parent_id: 31, is_sub: 1, balance: 0 },
+  { id: 4111, code: '4111', name_ar: 'تكلفة بضاعة مباعة', name_en: 'COGS', type: 'expense', category: 'sub', parent_id: 41, is_sub: 1, balance: 0 },
+  { id: 4211, code: '4211', name_ar: 'الرواتب والأجور', name_en: 'Salaries and Wages', type: 'expense', category: 'sub', parent_id: 42, is_sub: 1, balance: 0 },
+  { id: 4212, code: '4212', name_ar: 'الإيجارات', name_en: 'Rentals', type: 'expense', category: 'sub', parent_id: 42, is_sub: 1, balance: 0 },
+];
+
 const SEED_BRANCHES = [
   {
     id: 1,
@@ -645,6 +680,10 @@ export class LocalSaaSStorage {
     return this.get('tenants', SEED_TENANTS);
   }
 
+  static getAccounts() {
+    return this.get('accounts', SEED_ACCOUNTS);
+  }
+
   static getUsers() {
     return this.get('users', SEED_USERS);
   }
@@ -940,6 +979,7 @@ export class LocalSaaSStorage {
 
   static resetToDemoData() {
     this.set('tenants', SEED_TENANTS);
+    this.set('accounts', SEED_ACCOUNTS);
     this.set('users', SEED_USERS);
     this.set('branches', SEED_BRANCHES);
     this.set('products', SEED_PRODUCTS);
@@ -1851,6 +1891,41 @@ function handleLocalFallback(url, options, tenantId) {
     const existingInvoices = LocalSaaSStorage.getInvoices(tenantId);
     existingInvoices.unshift(newInvoice);
     LocalSaaSStorage.set('invoices', existingInvoices);
+
+    // ⚡ الترحيل الفوري المزدوج (Auto-Posting to Journal)
+    const existingJournals = LocalSaaSStorage.getJournals(tenantId);
+    const newJournalEntry = {
+      id: Date.now(),
+      tenant_id: tenantId,
+      entry_number: jeNumber,
+      date: tempInvoice.issue_date,
+      narration: `مبيعات فاتورة رقم ${invNumber}`,
+      total_debit: grandTotal,
+      total_credit: grandTotal,
+      created_by: 'النظام الآلي (Auto-Sync)',
+      details: [
+        {
+          account_id: body.payment_method === 'bank' || body.payment_method === 'transfer' ? 1112 : 1111,
+          account_name: body.payment_method === 'bank' || body.payment_method === 'transfer' ? 'البنك (الراجحي)' : 'الصندوق الرئيسي',
+          debit: grandTotal,
+          credit: 0
+        },
+        {
+          account_id: 3111,
+          account_name: 'مبيعات التجزئة',
+          debit: 0,
+          credit: subtotal
+        },
+        {
+          account_id: 2111, // Need to ensure VAT account exists
+          account_name: 'ضريبة القيمة المضافة المستحقة',
+          debit: 0,
+          credit: vatTotal
+        }
+      ]
+    };
+    existingJournals.unshift(newJournalEntry);
+    LocalSaaSStorage.set('journals', existingJournals);
 
     // الحفظ والمزامنة الحية مع جدول المبيعات (sales) في Firebase Firestore
     try {

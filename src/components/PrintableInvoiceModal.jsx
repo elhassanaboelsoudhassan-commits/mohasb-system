@@ -59,6 +59,10 @@ export default function PrintableInvoiceModal({
   const vatTotal = invoice.vat_total || (invoice.grand_total ? invoice.grand_total - subtotal : 0);
   const grandTotal = invoice.grand_total || invoice.total || 0;
 
+  const isB2B = invoice.invoice_type === 'standard_invoice' || invoice.invoiceType === 'standard_invoice' || (invoice.customer_vat && invoice.customer_vat.length > 5) || (invoice.customer?.vat_number && invoice.customer?.vat_number.length > 5);
+  const invoiceTypeTitleAr = isB2B ? 'فاتورة ضريبية' : 'فاتورة ضريبية مبسطة';
+  const invoiceTypeTitleEn = isB2B ? '(Tax Invoice)' : '(Simplified Tax Invoice)';
+
   return (
     <div className="modal-overlay" style={{ zIndex: 9999 }}>
       {/* Container for Dialog & On-screen preview */}
@@ -83,7 +87,7 @@ export default function PrintableInvoiceModal({
             </div>
             <div>
               <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-                فاتورة ضريبية مبسطة (ZATCA)
+                {invoiceTypeTitleAr} (ZATCA Phase 2)
               </h3>
               <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
                 رقم الفاتورة: {invoice.invoice_number || invoice.invoiceNumber}
@@ -147,7 +151,7 @@ export default function PrintableInvoiceModal({
               </h2>
             </div>
             <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#334155', letterSpacing: '0.3px' }}>
-              فاتورة ضريبية مبسطة (Simplified Tax Invoice)
+              {invoiceTypeTitleAr} {invoiceTypeTitleEn}
             </div>
             <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
               الرقم الضريبي: <strong className="font-mono">{tenantVat}</strong> | السجل التجاري: <strong className="font-mono">{tenantCr}</strong>
@@ -219,6 +223,12 @@ export default function PrintableInvoiceModal({
                   <div>
                     <span style={{ color: '#64748b' }}>الرقم الضريبي للمشتري: </span>
                     <strong className="font-mono">{invoice.customer_vat || invoice.customer?.vat_number}</strong>
+                  </div>
+                )}
+                {isB2B && (invoice.customer_address || invoice.customer?.address) && (
+                  <div style={{ width: '100%' }}>
+                    <span style={{ color: '#64748b' }}>العنوان الوطني للمشتري: </span>
+                    <strong>{invoice.customer_address || invoice.customer?.address || 'المملكة العربية السعودية'}</strong>
                   </div>
                 )}
               </div>
